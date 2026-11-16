@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wordling">
+<meta name="theme-color" content="#000000">
+<title>WORDLING</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--g:#C6FF00;--dim:#7d8873;--line:#20261a}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#000;color:#eef4e6;font-family:'JetBrains Mono',ui-monospace,monospace;overflow:hidden;overscroll-behavior:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.top{position:fixed;top:calc(10px + env(safe-area-inset-top));left:14px;right:14px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;z-index:2}
+.top>*{pointer-events:auto}
+.logo{font-family:'Bebas Neue';font-size:30px;letter-spacing:.06em;line-height:1}
+.logo b{color:var(--g);font-weight:400}
+#meta{font-size:11px;color:var(--dim);margin-top:4px}
+.right{display:flex;gap:6px}
+.right a,.right button{color:var(--dim);font:500 11.5px 'JetBrains Mono';text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:rgba(0,0,0,.6);cursor:pointer}
+form{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));display:flex;gap:8px;z-index:2;max-width:620px;margin:0 auto}
+input{flex:1;min-width:0;font:500 16px 'JetBrains Mono';background:rgba(12,15,10,.92);color:#eef4e6;border:1px solid var(--line);border-radius:14px;padding:13px 14px}
+input:focus{outline:1px solid var(--g)}
+#feed{font:700 14px 'JetBrains Mono';border:0;border-radius:14px;background:var(--g);color:#000;padding:0 18px;cursor:pointer}
+#intro{position:fixed;inset:0;display:none;place-items:center;text-align:center;padding:24px;z-index:5;background:rgba(0,0,0,.88)}
+#intro.on{display:grid}
+#intro h1{font-family:'Bebas Neue';font-weight:400;font-size:64px;line-height:.9}
+#intro h1 b{color:var(--g);font-weight:400}
+#intro p{color:var(--dim);font-size:13px;line-height:1.65;max-width:320px;margin:14px auto 20px}
+#intro button{font:700 15px 'JetBrains Mono';border:0;border-radius:999px;background:var(--g);color:#000;padding:14px 26px;cursor:pointer}
+#menu{position:fixed;top:calc(56px + env(safe-area-inset-top));right:14px;z-index:3;background:#0c0f0a;border:1px solid var(--line);border-radius:12px;padding:6px;display:none;flex-direction:column;min-width:190px}
+#menu.on{display:flex}
+#menu button{font:500 13px 'JetBrains Mono';background:none;border:0;color:#eef4e6;text-align:left;padding:10px 10px;border-radius:8px;cursor:pointer}
+#menu button:hover{background:#151b10}
+#menu .danger{color:#ff6b6b}
+#hint{position:fixed;left:0;right:0;bottom:calc(74px + env(safe-area-inset-bottom));text-align:center;font-size:11px;color:#3c4636;pointer-events:none;z-index:1}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="top">
+  <div><div class="logo">WORD<b>LING</b></div><div id="meta"></div></div>
+  <div class="right"><button id="menuBtn">···</button><a href="../">← projects</a></div>
+</div>
+<div id="menu">
+  <button id="rename">rename it</button>
+  <button id="memory">read its memory</button>
+  <button id="snap">take a picture</button>
+  <button id="reset" class="danger">start over</button>
+</div>
+<div id="hint">drag to lead it · tap it to hear one of your lines</div>
+<form id="form"><input id="input" maxlength="140" placeholder="feed it a thought…" autocomplete="off" enterkeyhint="send"><button id="feed" type="submit">FEED</button></form>
+
+<div id="intro"><div>
+  <h1>WORD<br><b>LING</b></h1>
+  <p>A small creature made only of the words you give it. Feed it thoughts, jokes, lines from your day. Its body is your words, it grows with every one, and it remembers them all.</p>
+  <button id="hello">HATCH IT</button>
+</div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $("c"), cx = cv.getContext("2d");
+const DPR = Math.min(devicePixelRatio || 1, 2);
+const KEY = "wordling-v1";
+let W, H;
+function fit(){ W = innerWidth; H = innerHeight; cv.width = W * DPR; cv.height = H * DPR; cx.setTransform(DPR, 0, 0, DPR, 0, 0); }
+addEventListener("resize", fit); fit();
+
+// ---------- memory ----------
+let M = null; try { M = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(M)); } catch (e) {} };
+const SEED_LINES = ["hello", "i am made of words"];
+function freshMemory(){ return { name: "Wordling", born: Date.now(), lastFed: Date.now(), msgs: SEED_LINES.map((t, i) => ({ t, hue: 75 + i * 40, at: Date.now() })) }; }
+
+// the body = every letter you ever fed it, newest at the head end
+let body = [];             // [{ch, hue, msg}]
+const MAX_SHOWN = 420;
+function rebuildBody(){
+  body = [];
+  M.msgs.forEach((m, mi) => { for (const ch of (m.t + " · ")) body.push({ ch, hue: m.hue, msg: mi }); });
+}
+
+// ---------- the creature ----------
+const head = { x: 0, y: 0, a: 0, v: 0 };
+let trail = [];              // positions the head has been, newest first
+const SP = 9.2;              // distance between letters
+let walked = 0, target = { x: 0, y: 0 }, wanderT = 0, lead = null, speak = null, eat = 0, blink = 0, startled = 0;
+const flying = [];           // letters flying from the input into the tail
+function resetCreature(){ head.x = W / 2; head.y = H * .45; head.a = 0; trail = []; for (let i = 0; i < 2000; i++) trail.push({ x: head.x - i * 1.2, y: head.y }); }
+
+function hungry(){ return Date.now() - M.lastFed > 20 * 3600 * 1000; }
+function step(dt, t){
+  // pick where to go: your finger, else a slowly wandering point
+  wanderT -= dt;
+  if (lead) { target.x = lead.x; target.y = lead.y; }
+  else if (wanderT <= 0 || Math.hypot(target.x - head.x, target.y - head.y) < 30) {
+    wanderT = 3 + Math.random() * 4;
+    target.x = W * (.15 + Math.random() * .7); target.y = H * (.18 + Math.random() * .55);
+  }
+  const want = Math.atan2(target.y - head.y, target.x - head.x);
+  let d = want - head.a; d = Math.atan2(Math.sin(d), Math.cos(d));
+  head.a += d * Math.min(1, dt * (lead ? 5 : 2.2)) + Math.sin(t * 1.7) * dt * .6;
+  const dist = Math.hypot(target.x - head.x, target.y - head.y);
+  const top = (lead ? 190 : hungry() ? 38 : 70) * (speak ? .15 : 1);
+  head.v += ((dist > 12 ? top : 0) - head.v) * Math.min(1, dt * 3);
+  head.x += Math.cos(head.a) * head.v * dt; head.y += Math.sin(head.a) * head.v * dt;
+  head.x = Math.max(20, Math.min(W - 20, head.x)); head.y = Math.max(70, Math.min(H - 100, head.y));
+  walked += head.v * dt;
+  // record the trail at fixed spacing
+  const last = trail[0];
+  const seg = Math.hypot(head.x - last.x, head.y - last.y);
+  if (seg >= 1.2) { trail.unshift({ x: head.x, y: head.y }); const need = Math.ceil(Math.min(body.length, MAX_SHOWN) * SP / 1.2) + 40; if (trail.length > need) trail.length = need; }
+  if (eat > 0) eat -= dt; if (startled > 0) startled -= dt;
+  blink = (Math.sin(t * .9) > .985) ? .15 : Math.max(0, blink - dt);
+  // flying letters home in on the tail
+  for (const f of flying) {
+    const tail = pointAt(Math.min(body.length, MAX_SHOWN) * SP);
+    f.t += dt * 1.6; const k = Math.min(1, f.t);
+    f.x = f.sx + (tail.x - f.sx) * k + Math.sin(k * Math.PI) * f.wob; f.y = f.sy + (tail.y - f.sy) * k - Math.sin(k * Math.PI) * 120;
+  }
+  for (let i = flying.length - 1; i >= 0; i--) if (flying[i].t >= 1) flying.splice(i, 1);
+  if (speak) { speak.t += dt; if (speak.t > speak.dur) speak = null; }
+}
+function pointAt(dist){
+  // position + angle along the trail, `dist` pixels behind the head
+  const i = Math.min(trail.length - 2, Math.max(0, Math.floor(dist / 1.2)));
+  const p = trail[i], q = trail[i + 1] || p;
+  return { x: p.x, y: p.y, a: Math.atan2(p.y - q.y, p.x - q.x) };
+}
+
+// ---------- draw ----------
+function draw(t){
+  cx.fillStyle = "#000"; cx.fillRect(0, 0, W, H);
+  // faint text dust in the background
+  cx.font = "500 11px 'JetBrains Mono', monospace"; cx.textAlign = "center"; cx.textBaseline = "middle";
+  for (let i = 0; i < 70; i++) { const x = (i * 97.3 + t * 3) % W, y = (i * 53.7 + Math.sin(t * .2 + i) * 20 + H) % H; cx.fillStyle = "rgba(198,255,0,.05)"; cx.fillText(".:'`"[i % 4], x, y); }
+
+  const n = Math.min(body.length, MAX_SHOWN);
+  const gait = walked / 14;
+  cx.font = "700 15px 'JetBrains Mono', monospace";
+  // legs first (behind the letters)
+  for (let i = 4; i < n; i += 6) {
+    const p = pointAt(i * SP), nx = -Math.sin(p.a), ny = Math.cos(p.a);
+    const swing = Math.sin(gait + i * .45) * 4, len = 12;
+    cx.strokeStyle = `hsla(${body[body.length - 1 - i].hue},60%,55%,.55)`; cx.lineWidth = 1.5;
+    for (const s of [-1, 1]) {
+      cx.beginPath(); cx.moveTo(p.x + nx * s * 5, p.y + ny * s * 5);
+      cx.lineTo(p.x + nx * s * len + Math.cos(p.a) * swing * s, p.y + ny * s * len + Math.sin(p.a) * swing * s); cx.stroke();
+    }
+  }
+  // the letters, newest right behind the head
+  for (let i = 0; i < n; i++) {
+    const b = body[body.length - 1 - i], p = pointAt((i + 1.4) * SP);
+    const wave = Math.sin(t * 3 - i * .35) * (eat > 0 ? 2.5 : 1);
+    const nx = -Math.sin(p.a), ny = Math.cos(p.a);
+    const age = i / n, light = 72 - age * 30;
+    const hl = speak && b.msg === speak.msg;
+    cx.save(); cx.translate(p.x + nx * wave, p.y + ny * wave); cx.rotate(p.a + Math.PI / 2 * 0);
+    cx.fillStyle = hl ? "#fff" : `hsl(${b.hue},85%,${light}%)`;
+    if (hl) { cx.shadowColor = `hsl(${b.hue},90%,60%)`; cx.shadowBlur = 10; }
+    cx.fillText(b.ch === " " ? "·" : b.ch, 0, 0);
+    cx.restore();
+  }
+  // head
+  cx.save(); cx.translate(head.x, head.y); cx.rotate(head.a);
+  cx.fillStyle = "#0c0f0a"; cx.strokeStyle = "#C6FF00"; cx.lineWidth = 2;
+  cx.beginPath(); cx.ellipse(0, 0, 17, 14, 0, 0, Math.PI * 2); cx.fill(); cx.stroke();
+  const ey = blink > 0 ? 0 : 1, sad = hungry();
+  cx.fillStyle = "#eef4e6";
+  for (const s of [-1, 1]) { cx.save(); cx.translate(6, s * 6); if (ey) { cx.beginPath(); cx.arc(0, 0, startled > 0 ? 3.6 : 2.6, 0, Math.PI * 2); cx.fill(); } else cx.fillRect(-1, -2.5, 2, 5); cx.restore(); }
+  cx.strokeStyle = "#eef4e6"; cx.lineWidth = 1.6; cx.beginPath();
+  if (eat > 0) { cx.arc(12, 0, 3 + Math.abs(Math.sin(t * 20)) * 2, 0, Math.PI * 2); }
+  else if (sad) { cx.arc(14, 0, 4, Math.PI * .65, Math.PI * 1.35); }
+  else { cx.arc(10, 0, 4, -Math.PI * .35, Math.PI * .35); }
+  cx.stroke();
+  // antennae
+  cx.strokeStyle = "#C6FF00"; cx.lineWidth = 1.3;
+  for (const s of [-1, 1]) { const w = Math.sin(t * 4 + s) * 3; cx.beginPath(); cx.moveTo(-4, s * 11); cx.quadraticCurveTo(-10, s * 20 + w, -2, s * 25 + w); cx.stroke(); cx.fillStyle = "#C6FF00"; cx.beginPath(); cx.arc(-2, s * 25 + w, 1.8, 0, 7); cx.fill(); }
+  cx.restore();
+  // flying letters
+  cx.font = "700 15px 'JetBrains Mono', monospace";
+  for (const f of flying) { if (f.t < 0) continue; cx.fillStyle = `hsl(${f.hue},90%,65%)`; cx.fillText(f.ch, f.x, f.y); }
+  // speech bubble: types out one of your old lines
+  if (speak) {
+    const shown = speak.text.slice(0, Math.floor(speak.t * 26));
+    cx.font = "600 14px 'JetBrains Mono', monospace";
+    const lines = wrap(shown || " ", Math.min(260, W - 60));
+    const wmax = Math.max(...lines.map(l => cx.measureText(l).width)) + 22, hh = lines.length * 19 + 14;
+    let bx = Math.max(10, Math.min(W - wmax - 10, head.x - wmax / 2)), by = head.y - 46 - hh;
+    if (by < 70) by = head.y + 40;
+    cx.fillStyle = "rgba(238,244,230,.96)"; roundRect(bx, by, wmax, hh, 12); cx.fill();
+    cx.fillStyle = "#000"; cx.textAlign = "left";
+    lines.forEach((l, k) => cx.fillText(l, bx + 11, by + 16 + k * 19));
+    cx.textAlign = "center";
+  }
+}
+function wrap(text, maxW){ const words = text.split(" "), out = []; let line = ""; for (const w of words) { const tt = line ? line + " " + w : w; if (cx.measureText(tt).width > maxW && line) { out.push(line); line = w; } else line = tt; } out.push(line); return out; }
+function roundRect(x, y, w, h, r){ cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r); cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath(); }
+
+// ---------- sound ----------
+let ac = null;
+function blip(f, d = .04, v = .03, type = "square"){ try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = f; g.gain.value = v; g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + d); o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + d + .02); } catch (e) {} }
+
+// ---------- feeding ----------
+function feed(text){
+  text = text.trim().replace(/\s+/g, " ").slice(0, 140); if (!text) return;
+  const hue = Math.floor((M.msgs.length * 47 + 75) % 360);
+  M.msgs.push({ t: text, hue, at: Date.now() }); M.lastFed = Date.now(); save();
+  const r = $("input").getBoundingClientRect();
+  [...text].forEach((ch, k) => flying.push({ ch, hue, sx: r.left + 20 + Math.min(k * 9, r.width - 40), sy: r.top + 10, x: 0, y: 0, t: -k * .035, wob: (Math.random() - .5) * 80 }));
+  setTimeout(() => { rebuildBody(); eat = 1.2; for (let i = 0; i < 4; i++) setTimeout(() => blip(500 + i * 120, .05, .04, "triangle"), i * 70); meta(); }, 650 + text.length * 35);
+}
+$("form").onsubmit = e => { e.preventDefault(); feed($("input").value); $("input").value = ""; };
+
+// ---------- touch: lead it, or tap it to hear one of your lines ----------
+let downAt = null;
+cv.addEventListener("pointerdown", e => { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; lead = { x: e.clientX, y: e.clientY }; $("menu").classList.remove("on"); });
+cv.addEventListener("pointermove", e => { if (lead) { lead.x = e.clientX; lead.y = e.clientY; } });
+addEventListener("pointerup", e => {
+  if (downAt && performance.now() - downAt.t < 260 && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 10) {
+    // a tap: if it's on (or near) the creature, it speaks
+    const near = Math.hypot(e.clientX - head.x, e.clientY - head.y) < 40 || bodyNear(e.clientX, e.clientY);
+    if (near) say(); else { startled = .6; blip(900, .03, .02); }
+  }
+  downAt = null; lead = null;
+});
+function bodyNear(x, y){ const n = Math.min(body.length, MAX_SHOWN); for (let i = 0; i < n; i += 3) { const p = pointAt((i + 1.4) * SP); if (Math.hypot(p.x - x, p.y - y) < 16) return true; } return false; }
+function say(){
+  const pool = M.msgs.filter(m => !SEED_LINES.includes(m.t)); const list = pool.length ? pool : M.msgs;
+  const mi = M.msgs.indexOf(list[Math.floor(Math.random() * list.length)]);
+  const m = M.msgs[mi], days = Math.floor((Date.now() - m.at) / 86400000);
+  speak = { text: m.t, msg: mi, t: 0, dur: 2.2 + m.t.length * .05, when: days };
+  let k = 0; const iv = setInterval(() => { if (!speak || k > m.t.length) return clearInterval(iv); if (m.t[k] && m.t[k] !== " ") blip(300 + (m.t.charCodeAt(k) % 30) * 18, .03, .025); k++; }, 1000 / 26);
+}
+
+// ---------- menu ----------
+$("menuBtn").onclick = e => { e.stopPropagation(); $("menu").classList.toggle("on"); };
+$("rename").onclick = () => { const n = prompt("What's its name?", M.name); if (n && n.trim()) { M.name = n.trim().slice(0, 16); save(); meta(); } $("menu").classList.remove("on"); };
+$("memory").onclick = () => {
+  $("menu").classList.remove("on");
+  const list = M.msgs.filter(m => !SEED_LINES.includes(m.t)).map(m => "· " + m.t).join("\n");
+  alert(list ? M.name + " remembers:\n\n" + list : M.name + " hasn't eaten any of your words yet.");
+};
+$("snap").onclick = () => { $("menu").classList.remove("on"); cv.toBlob(b => { const f = new File([b], "wordling.png", { type: "image/png" });
+  if (navigator.canShare && navigator.canShare({ files: [f] })) navigator.share({ files: [f], title: M.name }).catch(() => {});
+  else { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "wordling.png"; a.click(); } }); };
+$("reset").onclick = () => { $("menu").classList.remove("on"); if (confirm("Start over with a new Wordling? It will forget everything.")) { M = freshMemory(); save(); rebuildBody(); resetCreature(); meta(); } };
+
+function meta(){
+  const words = M.msgs.filter(m => !SEED_LINES.includes(m.t)).reduce((s, m) => s + m.t.split(" ").length, 0);
+  const days = Math.floor((Date.now() - M.born) / 86400000);
+  $("meta").textContent = `${M.name} · ${words} words eaten · ${days ? days + "d old" : "new"}${hungry() ? " · hungry" : ""}`;
+}
+
+// ---------- start ----------
+$("hello").onclick = () => { $("intro").classList.remove("on"); M = freshMemory(); save(); rebuildBody(); meta(); setTimeout(() => $("input").focus(), 300); };
+if (!M || !M.msgs) { M = freshMemory(); $("intro").classList.add("on"); }
+rebuildBody(); resetCreature(); meta();
+let lastT = performance.now();
+function loop(now){ requestAnimationFrame(loop); const dt = Math.min(.05, (now - lastT) / 1000); lastT = now; step(dt, now / 1000); draw(now / 1000); }
+requestAnimationFrame(loop);
+setInterval(meta, 60000);
+</script>
+</body>
+</html>
