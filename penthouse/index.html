@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Penthouse">
+<meta name="theme-color" content="#000000">
+<title>PENTHOUSE · 88F</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:'JetBrains Mono',ui-monospace,monospace;color:#e6e8ff;touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  #c{position:fixed;display:block;cursor:grab}
+  .hud{position:fixed;font-size:12px;background:rgba(5,3,12,.6);border:1px solid rgba(255,80,200,.25);border-radius:10px;padding:8px 12px;line-height:1.6;pointer-events:none}
+  #title{top:calc(12px + env(safe-area-inset-top));left:12px;font-weight:700;letter-spacing:.18em}
+  #title small{display:block;letter-spacing:.03em;font-weight:500;opacity:.6}
+  #help{bottom:12px;left:12px;opacity:.85}
+  kbd{border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:0 5px;font-family:inherit}
+  #prompt{position:fixed;left:50%;bottom:22%;transform:translateX(-50%);font-size:14px;font-weight:700;background:rgba(5,3,12,.75);border:1px solid rgba(80,230,255,.5);border-radius:12px;padding:9px 14px;display:none;color:#8ff0ff;pointer-events:auto;cursor:pointer}
+  #toast{position:fixed;top:24%;left:50%;transform:translate(-50%,-50%);font-size:14px;font-weight:700;background:rgba(5,3,12,.8);border:1px solid rgba(255,80,200,.4);border-radius:12px;padding:10px 16px;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center;white-space:pre}
+  #toast.on{opacity:1}
+  #start{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.55);z-index:5;cursor:pointer}
+  #start div{text-align:center;background:rgba(5,3,12,.85);border:1px solid rgba(255,80,200,.35);border-radius:16px;padding:20px 24px;max-width:340px;line-height:1.7;font-size:13px}
+  #start b{display:block;font-size:30px;letter-spacing:.2em;color:#ff5ad2;text-shadow:0 0 18px rgba(255,90,210,.6)}
+  #start i{font-style:normal;color:#8ff0ff}
+  #touch{position:fixed;inset:0;display:none}
+  #joy{position:fixed;width:116px;height:116px;border-radius:50%;border:2px solid rgba(143,240,255,.35);background:rgba(0,0,0,.25);display:none;pointer-events:none}
+  #knob{position:absolute;left:33px;top:33px;width:50px;height:50px;border-radius:50%;background:rgba(255,90,210,.45)}
+  #btns{position:fixed;right:calc(16px + env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));display:none;gap:10px;align-items:flex-end}
+  .tb{font:700 12px 'JetBrains Mono',monospace;color:#fff;background:rgba(5,3,12,.6);border:1px solid rgba(255,255,255,.25);border-radius:999px;cursor:pointer;padding:0}
+  #bUse{width:74px;height:74px;border-color:rgba(143,240,255,.6);color:#8ff0ff}
+  #bRun{width:56px;height:56px} #bRun.on{background:#ff5ad2;color:#000}
+  #tools{position:fixed;right:12px;top:calc(12px + env(safe-area-inset-top));display:flex;gap:8px}
+  #tools .tb{width:40px;height:40px;font-size:15px}
+  #photo{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:9;padding:20px}
+  #photo img{max-width:100%;max-height:72vh;border-radius:12px;-webkit-user-select:auto;user-select:auto;-webkit-touch-callout:default}
+  #photo .tb{padding:10px 18px}
+  body.touch #help{display:none} body.touch #touch,body.touch #btns{display:flex}
+  body.touch #title{font-size:10px;padding:6px 10px} body.touch #title small{display:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud" id="title">PENTHOUSE · 88F<small>every pixel here is a text character</small></div>
+<div class="hud" id="help"><kbd>W A S D</kbd> walk &nbsp; <kbd>drag</kbd>/<kbd>← →</kbd> look &nbsp; <kbd>Shift</kbd> run &nbsp; <kbd>E</kbd> use &nbsp; <kbd>L</kbd> lights &nbsp; <kbd>R</kbd> rain &nbsp; <kbd>T</kbd> sky &nbsp; <kbd>P</kbd> photo</div>
+<div id="tools"><button class="tb" id="bLight" title="Lights (L)">◐</button><button class="tb" id="bRain" title="Rain (R)">/</button><button class="tb" id="bSky" title="Sky (T)">☾</button><button class="tb" id="bPhoto" title="Photo (P)">◉</button><a class="tb" href="../" title="Projects" style="width:40px;height:40px;display:grid;place-items:center;text-decoration:none">←</a></div>
+<div id="prompt"></div>
+<div id="toast"></div>
+<div id="touch"><div id="joy"><div id="knob"></div></div></div>
+<div id="btns"><button class="tb" id="bRun">RUN</button><button class="tb" id="bUse">USE</button></div>
+<div id="photo"><img id="photoImg" alt="Penthouse photo"><div style="font-size:12px;opacity:.7">Press and hold → Save to Photos</div><div style="display:flex;gap:10px"><button class="tb" id="pShare">Share</button><button class="tb" id="pClose">Close</button></div></div>
+<div id="start"><div><b>88F</b>Your penthouse above the neon city.<br><br><i>Try:</i> the record player, the TV, the light switch by the elevator, the telescope on the terrace.<br><br><span id="how">Click to enter · <kbd>W A S D</kbd> walk · drag to look</span></div></div>
+
+<script>
+(() => {
+// ======================= the floor plan =======================
+// G glass  R glass railing  # concrete  A aquarium wall  S TV wall  N neon sign wall  E elevator
+// . wood   , carpet  r rug  t tile  d terrace deck  p pool
+const MW = 30, MH = 20;
+const M = Array.from({length: MH}, () => Array(MW).fill('.'));
+const set = (x, y, c) => { if (x >= 0 && y >= 0 && x < MW && y < MH) M[y][x] = c; };
+const fill = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) set(x, y, c); };
+for (let x = 0; x <= 21; x++) { set(x, 0, 'G'); set(x, 19, 'G'); }
+for (let y = 0; y < MH; y++) { set(0, y, 'G'); set(21, y, 'G'); }
+fill(21, 9, 21, 11, '.');                     // sliding door to the terrace
+fill(1, 1, 8, 6, ',');                        // bedroom carpet
+fill(9, 0, 9, 6, '#');                        // bedroom | kitchen wall
+set(1, 7, '#'); fill(2, 7, 7, 7, 'A'); set(8, 7, ','); // aquarium wall with a doorway
+fill(10, 1, 20, 5, 't');                      // kitchen tiles
+fill(7, 11, 14, 16, 'r');                     // living room rug
+fill(3, 10, 3, 15, 'S');                      // the TV wall
+fill(15, 7, 19, 7, 'N');                      // neon sign wall
+fill(9, 19, 11, 19, 'E');                     // elevator
+fill(22, 0, 29, 19, 'd'); fill(24, 4, 28, 14, 'p');
+fill(22, 0, 29, 0, 'R'); fill(22, 19, 29, 19, 'R'); fill(29, 0, 29, 19, 'R');
+const cell = (x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? null : M[y][x];
+const OPAQUE = new Set(['#', 'A', 'S', 'N', 'E']);
+const SEE = new Set(['G', 'R']);
+const indoor = x => x < 21.999;
+
+// ======================= furniture (billboards drawn with ASCII art) =======================
+const ART = {
+  bed:   [" ___________ ", "| (@)   (@) |", "|~~~~~~~~~~~|", "|___________|"],
+  lamp:  ["  _  ", " /*\\ ", "  |  ", " _|_ "],
+  plant: ["  \\|/ ", " -(*)-", " //|\\\\", "  |#| ", "  |_| "],
+  palm:  [" \\\\ // ", "--(@)--", " // \\\\ ", "   |   ", "   |   ", "  [_]  "],
+  island:[" _____________ ", "|=============|", "|  []  []  [] |", "|_____________|"],
+  fridge:[" ____ ", "|    |", "|  o |", "|----|", "|  o |", "|____|"],
+  stool: [" ___ ", "  |  ", " /|\\ "],
+  sofa:  [" _____________ ", "| ___________ |", "||___________||", "|_|_________|_|"],
+  table: [" ________ ", "|________|", " |      | "],
+  desk:  [" ___  ___  ___ ", "|:::||:::||:::|", "|___||___||___|", "=====[====]====", "  |          | "],
+  record:[" _______ ", "| (( )) |", "|  -O-  |", "|_______|"],
+  flamp: [" _/\\_ ", "  ||  ", "  ||  ", "  ||  ", " /__\\ "],
+  lounge:["___      ", "\\  \\_____", " \\_______\\", "  |     | "],
+  scope: ["   __=  ", "  //    ", " /|\\    ", "/ | \\   "],
+  switch:[" ___ ", "|[o]|", "|___|"],
+};
+const SPR = [
+  { x: 4.5, y: 3.0, h: .55,  w: 2.6, art: 'bed',    c: [.75, .55, 1] },
+  { x: 1.7, y: 1.6, h: .95, w: .7,  art: 'lamp',   c: [1, .8, .45], glow: true },
+  { x: 7.5, y: 1.6, h: 1.6, w: .9,  art: 'plant',  c: [.35, .95, .5] },
+  { x: 15,  y: 3.3, h: 1.0,  w: 3.2, art: 'island', c: [.85, .85, .95] },
+  { x: 19.5,y: 1.6, h: 1.95, w: .9,  art: 'fridge', c: [.7, .9, 1] },
+  { x: 13.6,y: 4.7, h: .75, w: .6,  art: 'stool',  c: [1, .4, .8] },
+  { x: 15,  y: 4.7, h: .75, w: .6,  art: 'stool',  c: [1, .4, .8] },
+  { x: 16.4,y: 4.7, h: .75, w: .6,  art: 'stool',  c: [1, .4, .8] },
+  { x: 11.8,y: 13.5,h: .85, w: 3.2, art: 'sofa',   c: [.55, .45, 1] },
+  { x: 8.6, y: 13.5,h: .45, w: 1.6, art: 'table',  c: [.9, .9, 1] },
+  { x: 18.2,y: 17.2,h: 1.25,  w: 2.8, art: 'desk',   c: [.3, 1, .95], glow: true, act: 'desk' },
+  { x: 19.6,y: 10.5,h: .95,  w: 1.3, art: 'record', c: [1, .75, .3], act: 'music' },
+  { x: 5.2, y: 9.0, h: 1.75, w: .8,  art: 'flamp',  c: [1, .5, .9], glow: true },
+  { x: 1.6, y: 18,  h: 1.05,w: .9,  art: 'plant',  c: [.35, .95, .5] },
+  { x: 20.2,y: 18.2,h: 1.05,w: .9,  art: 'plant',  c: [.35, .95, .5] },
+  { x: 23,  y: 6,   h: .55, w: 1.7, art: 'lounge', c: [1, 1, 1] },
+  { x: 23,  y: 9,   h: .55, w: 1.7, art: 'lounge', c: [1, 1, 1] },
+  { x: 23,  y: 12,  h: .55, w: 1.7, art: 'lounge', c: [1, 1, 1] },
+  { x: 27.5,y: 17.4,h: 2.6, w: 1.3, art: 'palm',   c: [.4, 1, .55] },
+  { x: 26.5,y: 1.8, h: 1.4, w: 1.1, art: 'scope',  c: [.9, .9, 1], act: 'scope' },
+  { x: 12.6,y: 18.55,h: .32,w: .45, z: 1.1, art: 'switch', c: [.6, 1, 1], glow: true, act: 'lights', nob: true },
+];
+SPR.forEach(s => { s.r = Math.max(.25, s.w * .38); s.rows = ART[s.art]; s.aw = Math.max(...s.rows.map(l => l.length)); });
+
+// ======================= player =======================
+const pl = { x: 10.5, y: 17.4, a: -Math.PI / 2, pitch: 0, bob: 0 };
+const keys = {};
+let FOV = 1.15, zoom = false, runOn = false;
+function blocked(x, y){
+  const c = cell(x | 0, y | 0); if (c === null || OPAQUE.has(c) || SEE.has(c)) return true;
+  for (const s of SPR) if (!s.nob && Math.hypot(s.x - x, s.y - y) < s.r) return true;
+  return false;
+}
+
+// ======================= the city outside (a 360° panorama of towers) =======================
+const NB = 2048;
+const hash = (a, b) => { let h = a * 374761393 + b * 668265263; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967295; };
+let sd = 88; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+const NEONS = [[1, .25, .75], [.2, .95, 1], [.7, .35, 1], [1, .85, .25], [.3, 1, .55], [1, .4, .3]];
+const SIGNWORDS = ["NEON", "88", "RAMEN", "HOTEL", "WEDISRUPT", "OPEN", "BAR", "ASCII", "CLAUDE", "24H", "SAKE", "ARCADE"];
+const LAYERS = [];
+for (const [lo, hi, minW, maxW, haze] of [[-0.10, 0.10, 6, 22, .55], [-0.30, 0.16, 10, 34, .25], [-0.65, 0.42, 16, 52, 0]]) {
+  const top = new Float32Array(NB), bid = new Int32Array(NB), bx = new Float32Array(NB), info = [];
+  let b = 0;
+  while (b < NB) {
+    const w = Math.floor(minW + rnd() * (maxW - minW)), gap = rnd() < .25;
+    const t = gap ? -1.5 : lo + Math.pow(rnd(), 1.6) * (hi - lo) + (rnd() < .05 ? .25 : 0);
+    const id = info.length;
+    info.push({ t, col: NEONS[Math.floor(rnd() * NEONS.length)], sign: !gap && rnd() < .45 ? SIGNWORDS[Math.floor(rnd() * SIGNWORDS.length)] : null, signAt: rnd(), warm: rnd(), beacon: t > hi * .6 });
+    for (let k = 0; k < w && b < NB; k++, b++) { top[b] = t; bid[b] = id; bx[b] = k / w; }
+  }
+  LAYERS.push({ top, bid, bx, info, haze });
+}
+const cars = Array.from({ length: 16 }, () => ({ ang: rnd() * 6.283, el: -0.05 + rnd() * .2, sp: (rnd() < .5 ? -1 : 1) * (.03 + rnd() * .06), col: rnd() < .5 ? [.3, 1, 1] : [1, .35, .85] }));
+const SKIES = [
+  { name: 'midnight', top: [.02, .01, .07], hor: [.32, .06, .36], moon: 1, lit: 1 },
+  { name: 'dusk',     top: [.10, .05, .25], hor: [1, .42, .35],   moon: .4, lit: .75 },
+  { name: 'storm',    top: [.04, .05, .08], hor: [.18, .2, .3],    moon: 0, lit: .9 },
+];
+let sky = 0;
+
+// ======================= renderer: every character drawn in one WebGL call =======================
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl', { antialias: false, alpha: false });
+const TOUCH = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
+if (TOUCH) document.body.classList.add('touch');
+let GLYPHS = ""; for (let i = 32; i < 127; i++) GLYPHS += String.fromCharCode(i);
+GLYPHS += "·░▒";
+const GI = {}; [...GLYPHS].forEach((g, i) => GI[g] = i);
+let COLS, ROWS, CW, CH, CWp, CHp, W, Hpx, fg, bg, zc, cityMask, atlasT, fgT, bgT, uL = {};
+function initGL(){
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, `attribute vec2 p; varying vec2 uv; void main(){ uv=p*.5+.5; uv.y=1.-uv.y; gl_Position=vec4(p,0.,1.); }`));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, `precision mediump float; varying vec2 uv; uniform sampler2D atlas,fgT,bgT; uniform vec2 grid,agrid;
+    void main(){ vec2 g=uv*grid, c=floor(g), l=fract(g); vec4 f=texture2D(fgT,(c+.5)/grid); vec3 b=texture2D(bgT,(c+.5)/grid).rgb;
+      float gi=floor(f.a*255.+.5); vec2 a=(vec2(mod(gi,agrid.x),floor(gi/agrid.x))+l)/agrid; gl_FragColor=vec4(mix(b,f.rgb,texture2D(atlas,a).r),1.); }`));
+  gl.linkProgram(p); gl.useProgram(p);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(p, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  for (const n of ['atlas', 'fgT', 'bgT', 'grid', 'agrid']) uL[n] = gl.getUniformLocation(p, n);
+  const mk = () => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v); return t; };
+  atlasT = mk(); fgT = mk(); bgT = mk();
+  gl.uniform1i(uL.atlas, 0); gl.uniform1i(uL.fgT, 1); gl.uniform1i(uL.bgT, 2);
+}
+const AG = 16;
+function layout(){
+  const dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; Hpx = innerHeight;
+  const fs = TOUCH ? (Math.min(W, Hpx) < 450 ? 9 : 10) : (W < 700 ? 10 : W > 1700 ? 14 : 12);
+  const m = document.createElement('canvas').getContext('2d'); m.font = `500 ${fs}px 'JetBrains Mono', monospace`;
+  CW = m.measureText('M').width; CH = Math.round(fs * 1.25);
+  COLS = Math.floor(W / CW); ROWS = Math.floor(Hpx / CH); CWp = Math.round(CW * dpr); CHp = Math.round(CH * dpr);
+  cv.width = COLS * CWp; cv.height = ROWS * CHp;
+  cv.style.width = (COLS * CWp / dpr) + 'px'; cv.style.height = (ROWS * CHp / dpr) + 'px';
+  cv.style.left = ((W - COLS * CWp / dpr) / 2) + 'px'; cv.style.top = ((Hpx - ROWS * CHp / dpr) / 2) + 'px';
+  gl.viewport(0, 0, cv.width, cv.height);
+  const ar = Math.ceil(GLYPHS.length / AG), ac = document.createElement('canvas'); ac.width = AG * CWp; ac.height = ar * CHp;
+  const x = ac.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, ac.width, ac.height);
+  x.font = `500 ${fs * dpr}px 'JetBrains Mono', monospace`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff';
+  [...GLYPHS].forEach((g, i) => x.fillText(g, (i % AG) * CWp + CWp / 2, Math.floor(i / AG) * CHp + CHp / 2 + dpr));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlasT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, ac);
+  gl.uniform2f(uL.grid, COLS, ROWS); gl.uniform2f(uL.agrid, AG, ar);
+  fg = new Uint8Array(COLS * ROWS * 4); bg = new Uint8Array(COLS * ROWS * 4); zc = new Float32Array(COLS); cityMask = new Uint8Array(COLS * ROWS);
+}
+const cl = v => v < 0 ? 0 : v > 1 ? 1 : v, lerp = (a, b, t) => a + (b - a) * t;
+function put(i, ch, r, g, b, br, bgc, bb){
+  const o = i * 4; fg[o] = cl(r) * 255; fg[o + 1] = cl(g) * 255; fg[o + 2] = cl(b) * 255; fg[o + 3] = GI[ch] ?? 0;
+  bg[o] = cl(br) * 255; bg[o + 1] = cl(bgc) * 255; bg[o + 2] = cl(bb) * 255; bg[o + 3] = 255;
+}
+function tint(i, r, g, b, k){ const o = i * 4; for (const [j, v] of [[0, r], [1, g], [2, b]]) { fg[o + j] = lerp(fg[o + j], v * 255, k); bg[o + j] = lerp(bg[o + j], v * 255 * .5, k); } }
+
+// ---------- lighting moods (the switch by the elevator) ----------
+const MOODS = [
+  { name: 'neon',      a: [1, .25, .75], b: [.2, .9, 1],  amb: .62 },
+  { name: 'cyan',      a: [.2, .9, 1],   b: [.6, .4, 1],  amb: .55 },
+  { name: 'warm',      a: [1, .62, .3],  b: [1, .85, .5], amb: .85 },
+  { name: 'lights off',a: [.35, .3, .6], b: [.3, .3, .55],amb: .2 },
+];
+let mood = 0, rain = false, music = false, tvCh = 0, t = 0;
+try { const sv = JSON.parse(localStorage.getItem('penthouse-88f')); if (sv) { mood = sv.mood | 0; rain = !!sv.rain; tvCh = sv.tvCh | 0; sky = sv.sky | 0; } } catch (e) {}
+const persist = () => { try { localStorage.setItem('penthouse-88f', JSON.stringify({ mood, rain, tvCh, sky })); } catch (e) {} };
+
+// ---------- what the city looks like in a given direction / elevation ----------
+function city(i, ang, el, col, row){
+  const S = SKIES[sky];
+  let a = ((ang % 6.283) + 6.283) % 6.283, bin = Math.floor(a / 6.283 * NB) % NB;
+  for (let L = 2; L >= 0; L--) {
+    const Ly = LAYERS[L];
+    // parallax: nearer layers are "bigger", so sample them at a finer angle
+    const b2 = (Math.floor(bin * (1 + L * .5)) + L * 300) % NB, top = Ly.top[b2];
+    if (el < top) {
+      const B = Ly.info[Ly.bid[b2]], u = Ly.bx[b2];
+      if (top < -1) break;                                          // a street far below
+      const fy = Math.floor((top - el) * (60 + L * 40)), fx = Math.floor(b2 * (1 + L * .5));
+      const k = (1 - Ly.haze) * S.lit;
+      if (B.sign && Math.abs(u - B.signAt * .7 - .15) < .05 && fy >= 2) {
+        const ch = B.sign[(fy - 2) % (B.sign.length + 3)];
+        if (ch && Math.sin(t * 2 + Ly.bid[b2]) > -.7) { put(i, ch, B.col[0] * k + .1, B.col[1] * k + .1, B.col[2] * k + .1, B.col[0] * .25 * k, B.col[1] * .25 * k, B.col[2] * .25 * k); cityMask[i] = 1; return; }
+      }
+      if (B.beacon && fy === 0 && Math.abs(u - .5) < .1 && Math.sin(t * 3 + Ly.bid[b2]) > 0) { put(i, '*', 1, .2, .2, .2, 0, 0); cityMask[i] = 1; return; }
+      const win = hash(fx, fy * 7 + L * 999), lit = win > .55 - S.lit * .1 && fx % 2 === 0 && fy % 2 === 0;
+      const base = [.05 + L * .02, .04 + L * .02, .1 + L * .03];
+      if (fy === 0) { put(i, '_', B.col[0] * .7 * k, B.col[1] * .7 * k, B.col[2] * .7 * k, base[0], base[1], base[2]); }
+      else if (lit) { const w = B.warm > .5 ? [1, .78, .42] : [.5, .85, 1]; const f = (win > .985 && Math.sin(t * 9 + fx) > 0) ? .3 : 1;
+        put(i, win > .8 ? '#' : ':', w[0] * k * f, w[1] * k * f, w[2] * k * f, base[0] * 1.5, base[1] * 1.5, base[2] * 1.5); }
+      else put(i, fy % 2 ? '.' : ' ', .12 * k + .05, .1 * k + .05, .2 * k + .08, base[0], base[1], base[2]);
+      cityMask[i] = 1; return;
+    }
+  }
+  if (el < -0.6) {     // looking down into the streets
+    const sx = Math.floor(a * 90), sy = Math.floor(-1 / el * 30);
+    const lane = sx % 9 === 0 || sy % 7 === 0, h = hash(sx, sy);
+    if (lane) put(i, h > .5 ? '-' : ':', 1, .45 + h * .4, .2, .15, .05, .04);
+    else put(i, h > .93 ? '*' : '.', .5, .2, .55, .03, .02, .06);
+    cityMask[i] = 1; return;
+  }
+  // sky
+  const k = cl((el + .05) / .8);
+  let r = lerp(S.hor[0], S.top[0], k), g = lerp(S.hor[1], S.top[1], k), b = lerp(S.hor[2], S.top[2], k), ch = ' ', fr = r, fgc = g, fb = b;
+  if (S.moon) { const da = Math.atan2(Math.sin(a - 4.2), Math.cos(a - 4.2)), dm = Math.hypot(da * 1.0, el - .42);
+    if (dm < .07) { ch = dm < .045 ? '@' : 'O'; fr = fgc = fb = .95 * S.moon; } else if (dm < .2) { const gw = (1 - dm / .2) * .25 * S.moon; r += gw; g += gw; b += gw * 1.2; } }
+  if (ch === ' ' && el > .05 && sky !== 2) { const hs = hash(Math.floor(a * 160), Math.floor(el * 90)); if (hs > .992) { ch = hs > .998 ? '*' : '.'; fr = fgc = fb = .8; } }
+  if (ch === ' ' && hash(Math.floor(a * 30 + t * .4), Math.floor(el * 20)) > .965 && el > 0) { ch = '~'; fr = r + .12; fgc = g + .1; fb = b + .15; }   // drifting haze
+  put(i, ch, fr, fgc, fb, r, g, b); cityMask[i] = 1;
+}
+
+
+const FONT = {
+  A:[".#.","#.#","###","#.#","#.#"], B:["##.","#.#","##.","#.#","##."], C:[".##","#..","#..","#..",".##"], D:["##.","#.#","#.#","#.#","##."],
+  E:["###","#..","##.","#..","###"], G:[".##","#..","#.#","#.#",".##"], I:["###",".#.",".#.",".#.","###"], M:["#.#","###","###","#.#","#.#"],
+  N:["#.#","###","###","###","#.#"], O:[".#.","#.#","#.#","#.#",".#."], P:["##.","#.#","##.","#..","#.."], R:["##.","#.#","##.","#.#","#.#"],
+  S:[".##","#..",".#.","..#","##."], T:["###",".#.",".#.",".#.",".#."], U:["#.#","#.#","#.#","#.#","###"], V:["#.#","#.#","#.#","#.#",".#."],
+  W:["#.#","#.#","###","###","#.#"], Y:["#.#","#.#",".#.",".#.",".#."], H:["#.#","#.#","###","#.#","#.#"], L:["#..","#..","#..","#..","###"],
+  F:["###","#..","##.","#..","#.."], K:["#.#","##.","#..","##.","#.#"], X:["#.#","#.#",".#.","#.#","#.#"],
+  "1":[".#.","##.",".#.",".#.","###"], "8":["###","#.#","###","#.#","###"], "9":["###","#.#","###","..#","###"], "6":["###","#..","###","#.#","###"], ",":["...","...","...",".#.","#.."],
+  " ":["..","..","..","..",".."], "·":["...","...",".#.","...","..."]
+};
+function bitmap(str){
+  const cols = []; for (const ch of str) { const g = FONT[ch] || FONT[" "]; for (let x = 0; x < g[0].length; x++) cols.push(g.map(r => r[x] === "#")); cols.push([0,0,0,0,0].map(() => false)); }
+  return { w: cols.length, on: (x, y) => x >= 0 && x < cols.length && y >= 0 && y < 5 && cols[x][y] };
+}
+const SIGN = bitmap("DREAM BIG"), NEWS = bitmap("  WE DISRUPT · POSTED 1,996 VIDEOS · 88F ·  ");
+
+// ---------- wall textures ----------
+function wallTex(i, c, u, v, d, mx, my){
+  const Md = MOODS[mood], fall = 1 / (1 + d * .12), am = Md.amb * fall;
+  if (c === '#') {
+    if (v > .88 && v < .93) { const n = Md.a; put(i, '=', n[0], n[1], n[2], n[0] * .3, n[1] * .3, n[2] * .3); return; }   // neon strip
+    if (v < .05) { put(i, '_', .3 * am, .3 * am, .4 * am, .05, .05, .08); return; }
+    const h = hash(Math.floor(u * 8 + mx * 13), Math.floor(v * 10 + my * 7));
+    put(i, h > .82 ? ':' : h > .5 ? '.' : ' ', .55 * am, .55 * am, .65 * am, .18 * am, .17 * am, .22 * am); return;
+  }
+  if (c === 'A') {          // aquarium: deep blue water, fish swimming past
+    const lane = Math.floor(v * 7), fx = ((t * (.05 + hash(lane, 3) * .08) * (lane % 2 ? 1 : -1) + hash(lane, 9) + mx * .17) % 1 + 1) % 1;
+    const du = (u - fx), cols = [[1, .6, .3], [1, .4, .8], [.5, 1, .9], [1, .9, .3]], fc = cols[lane % 4];
+    let ch = ' ', r = .1, g = .45, b = .8;
+    if (Math.abs(du) < .07 && Math.abs((v * 7) % 1 - .5) < .18 && v > .12 && v < .9 && hash(lane, mx) > .3) { const dir = lane % 2 ? 1 : -1; const q = Math.floor((du / .07 + 1) * 1.5); ch = dir > 0 ? "><>"[Math.min(2, q)] : "<><"[Math.min(2, q)]; r = fc[0]; g = fc[1]; b = fc[2]; }
+    else if (hash(Math.floor(u * 40 + mx * 40), Math.floor(v * 70 - t * 6)) > .985) { ch = 'o'; r = .7; g = .9; b = 1; }
+    else if (v < .1) { ch = hash(Math.floor(u * 20), mx) > .5 ? '^' : '.'; r = .9; g = .8; b = .5; }
+    else if (v > .94) { ch = '='; r = .4; g = .5; b = .6; }
+    put(i, ch, r, g, b, .02, .16, .32); return;
+  }
+  if (c === 'S') {          // the TV
+    if (u < .04 || u > .96 || v < .18 || v > .82) { put(i, v < .18 && v > .1 ? '_' : ' ', .2, .2, .25, .02, .02, .03); return; }
+    const su = (u - .04) / .92 + (my - 10), sv = (v - .18) / .64, TU = 1 - su / 6;   // whole wall = one big screen
+    if (tvCh === 0) {                         // synth sun over a neon grid
+      if (sv > .45) { const dx = TU - .5, dy = sv - .62, rr = Math.hypot(dx * 1.6, dy); if (rr < .22 && (Math.floor(sv * 30) % 3 !== 0 || sv > .7)) { put(i, '#', 1, lerp(.85, .3, (sv - .45) / .35), .4, .3, .05, .2); return; } put(i, ' ', 0, 0, 0, .12, .02, .2); return; }
+      const z = 1 / Math.max(.02, .45 - sv), gx = (TU - .5) * z, gz = z + t * 2;
+      const line = Math.abs(gx - Math.round(gx)) < .06 * z || Math.abs(gz - Math.round(gz)) < .08 * z;
+      put(i, line ? '+' : ' ', 1, .3, .85, .06, .01, .12); return;
+    }
+    if (tvCh === 1) {                         // scrolling message
+      const fy = Math.floor((sv - .3) / .4 * 5), fx = Math.floor((TU * 30 + t * 6)) % NEWS.w;
+      if (sv > .3 && sv < .7 && NEWS.on(fx, 4 - fy)) { put(i, '#', .3, 1, .95, 0, .25, .28); return; }
+      put(i, hash(Math.floor(TU * 80), Math.floor(sv * 30 + t * 4)) > .97 ? '.' : ' ', .3, .8, .9, 0, .05, .08); return;
+    }
+    if (tvCh === 2) { const h = hash(Math.floor(TU * 120 + t * 70), Math.floor(sv * 40 + t * 50)); put(i, " .:-=+*#"[Math.floor(h * 8)], h, h, h, .05, .05, .05); return; }
+    put(i, ' ', 0, 0, 0, .01, .01, .015); return;
+  }
+  if (c === 'N') {          // neon sign: DREAM BIG across the wall
+    const U = ((mx - 15) + (1 - u)) / 5, fx = Math.floor(U * (SIGN.w + 4)) - 2, fy = Math.floor((v - .42) / .3 * 5);
+    if (v > .42 && v < .72 && SIGN.on(fx, 4 - fy)) { const on = !(fx > 26 && Math.sin(t * 11) > .6); const n = on ? Md.a : [.2, .1, .15]; put(i, '#', n[0] + .15, n[1] + .15, n[2] + .15, n[0] * .45, n[1] * .45, n[2] * .45); return; }
+    const glow = Math.max(0, 1 - Math.abs(v - .53) * 4) * .25;
+    put(i, ' ', 0, 0, 0, .1 * am + Md.a[0] * glow, .1 * am + Md.a[1] * glow, .12 * am + Md.a[2] * glow); return;
+  }
+  if (c === 'E') {          // elevator doors
+    if (v > .82) { const up = Math.sin(t * 2) > 0; put(i, Math.abs(u - .5) < .1 && mx === 10 ? (up ? '^' : 'v') : '=', .9, .4, .3, .1, .02, .02); return; }
+    const seam = mx === 10 && Math.abs(u - .5) < .06;
+    put(i, seam ? '|' : (hash(Math.floor(u * 6), Math.floor(v * 30)) > .7 ? '-' : ' '), .75 * am + .2, .78 * am + .2, .85 * am + .2, .25 * am, .26 * am, .3 * am); return;
+  }
+}
+
+// ---------- floor + ceiling textures ----------
+function floorTex(i, c, wx, wy, d){
+  const Md = MOODS[mood], fall = 1 / (1 + d * .15), am = Md.amb * fall, fx = Math.floor(wx * 4), fy = Math.floor(wy * 4), h = hash(fx, fy);
+  if (c === '.') {                                              // glossy dark wood with neon reflections
+    const plank = Math.floor(wy * 3.2), seam = Math.abs(wx * 1.2 + plank * .37 - Math.round(wx * 1.2 + plank * .37)) < .04;
+    if (h > .97 && fall > .25) { const n = h > .985 ? Md.a : Md.b; put(i, '~', n[0] * .7, n[1] * .7, n[2] * .7, .08, .05, .07); return; }
+    put(i, seam ? '|' : (h > .6 ? '_' : ' '), .6 * am, .4 * am, .28 * am, .2 * am, .12 * am, .09 * am); return;
+  }
+  if (c === ',') { put(i, h > .5 ? ',' : '.', .45 * am, .4 * am, .6 * am, .16 * am, .13 * am, .22 * am); return; }
+  if (c === 'r') { const px = Math.floor(wx * 2) + Math.floor(wy * 2); const n = px % 2 ? Md.a : Md.b; put(i, (Math.floor(wx * 4) + Math.floor(wy * 4)) % 3 ? '+' : 'x', n[0] * am, n[1] * am, n[2] * am, n[0] * .15 * am, n[1] * .15 * am, n[2] * .15 * am); return; }
+  if (c === 't') { const g = (wx % 1 < .07) || (wy % 1 < .07); put(i, g ? '+' : ' ', .8 * am, .82 * am, .9 * am, .32 * am, .33 * am, .38 * am); return; }
+  if (c === 'd') { const plank = (wy * 3) % 1 < .12; const S = SKIES[sky]; const wet = rain && h > .9; put(i, wet ? '~' : plank ? '=' : '.', .55 * fall + (wet ? .2 : 0), .45 * fall + (wet ? .3 : 0), .4 * fall + (wet ? .4 : 0), .12 * fall + S.hor[0] * .05, .09 * fall, .1 * fall + S.hor[2] * .05); return; }
+  if (c === 'p') { const w = Math.sin(wx * 3 + t * 1.6) + Math.sin(wy * 2.4 - t * 1.2); put(i, w > 1 ? '~' : w > -.2 ? '-' : '.', .4, 1, 1, .02, .3 + w * .04, .45); return; }
+  put(i, '.', .3 * am, .3 * am, .3 * am, .1 * am, .1 * am, .1 * am);
+}
+function ceilTex(i, wx, wy, d){
+  const Md = MOODS[mood], fall = 1 / (1 + d * .2), am = Md.amb * fall;
+  const lamp = Math.hypot((wx % 5) - 2.5, (wy % 5) - 2.5) < .16;
+  if (lamp && mood !== 3) { put(i, 'o', 1, .95, .85, .35 * fall, .3 * fall, .25 * fall); return; }
+  const cove = (wx % 1 < .04) && (Math.floor(wx) % 5 === 0);
+  if (cove) { const n = Md.b; put(i, '-', n[0] * .7, n[1] * .7, n[2] * .7, n[0] * .1, n[1] * .1, n[2] * .1); return; }
+  put(i, ' ', 0, 0, 0, .1 * am, .09 * am, .13 * am);
+}
+
+// ======================= render =======================
+function render(){
+  const EYE = 1.6 + Math.sin(pl.bob) * .03, CEIL = 3;
+  const f = (W / 2) / Math.tan(FOV / 2), horizon = Hpx / 2 + pl.pitch * Hpx;
+  const dx = Math.cos(pl.a), dy = Math.sin(pl.a), tp = Math.tan(FOV / 2), px = -dy * tp, py = dx * tp;
+  cityMask.fill(0);
+  for (let col = 0; col < COLS; col++) {
+    const sx = (col + .5) * CW, cam = (sx - W / 2) / (W / 2);
+    const rx = dx + px * cam, ry = dy + py * cam, ang = Math.atan2(ry, rx);
+    // DDA through the floor plan: first glass pane + first solid wall
+    let mx = Math.floor(pl.x), my = Math.floor(pl.y);
+    const ddx = Math.abs(1 / rx), ddy = Math.abs(1 / ry), sxs = rx < 0 ? -1 : 1, sys = ry < 0 ? -1 : 1;
+    let sdx = rx < 0 ? (pl.x - mx) * ddx : (mx + 1 - pl.x) * ddx, sdy = ry < 0 ? (pl.y - my) * ddy : (my + 1 - pl.y) * ddy;
+    let wd = Infinity, wc = null, wu = 0, wmx = 0, wmy = 0, gd = Infinity, gc = null, gu = 0, side = 0;
+    for (let s = 0; s < 80; s++) {
+      if (sdx < sdy) { sdx += ddx; mx += sxs; side = 0; } else { sdy += ddy; my += sys; side = 1; }
+      const c = cell(mx, my); if (c === null) break;
+      const d = side === 0 ? sdx - ddx : sdy - ddy;
+      let u = side === 0 ? pl.y + d * ry : pl.x + d * rx; u -= Math.floor(u);
+      if (SEE.has(c)) { if (gd === Infinity) { gd = d; gc = c; gu = u; } continue; }
+      if (OPAQUE.has(c)) { wd = d; wc = c; wu = (side === 0 && rx > 0) || (side === 1 && ry < 0) ? 1 - u : u; wmx = mx; wmy = my; break; }
+    }
+    zc[col] = wd;
+    const wTop = horizon - (CEIL - EYE) * f / wd, wBot = horizon + EYE * f / wd;
+    const gTop = gc === 'R' ? horizon + (EYE - 1.05) * f / gd : horizon - (CEIL - EYE) * f / gd, gBot = horizon + EYE * f / gd;
+    for (let row = 0; row < ROWS; row++) {
+      const i = row * COLS + col, y = (row + .5) * CH;
+      let dist;
+      if (y >= wTop && y < wBot) { dist = wd; wallTex(i, wc, wu, (wBot - y) / (wBot - wTop), wd, wmx, wmy); if (side === 1) tint(i, 0, 0, 0, .12); }
+      else if (y > horizon) {
+        dist = EYE * f / (y - horizon);
+        const wx = pl.x + rx * dist, wy = pl.y + ry * dist, c = cell(Math.floor(wx), Math.floor(wy));
+        if (c === null || dist > wd) city(i, ang, (horizon - y) / f, col, row); else floorTex(i, c, wx, wy, dist);
+      } else {
+        dist = (CEIL - EYE) * f / (horizon - y);
+        const wx = pl.x + rx * dist, wy = pl.y + ry * dist;
+        if (dist < wd && indoor(wx) && cell(Math.floor(wx), Math.floor(wy)) !== null) ceilTex(i, wx, wy, dist);
+        else city(i, ang, (horizon - y) / f, col, row);
+      }
+      // the glass: a faint tint, the frames, reflections and raindrops
+      if (gc && y >= gTop && y < gBot && dist > gd + .01) {
+        const gv = (gBot - y) / (gBot - gTop);
+        if (gu < .035 || gu > .965 || (gc === 'R' && gv > .9)) put(i, gc === 'R' ? '=' : '|', .45, .45, .55, .06, .06, .09);
+        else {
+          tint(i, .25, .35, .55, .12);
+          if (((gu * 3 + gv * 2 + pl.a * .3) % 1) < .015) put(i, '/', .5, .55, .7, bg[i * 4] / 255, bg[i * 4 + 1] / 255, bg[i * 4 + 2] / 255);
+          if (rain && gc === 'G') { const dr = hash(Math.floor(gu * 14 + gd * 3), Math.floor(gv * 18 + t * (1 + hash(Math.floor(gu * 14), 1) * 2))); if (dr > .9) put(i, dr > .97 ? 'o' : '.', .7, .8, 1, bg[i * 4] / 255, bg[i * 4 + 1] / 255, bg[i * 4 + 2] / 255); }
+        }
+      }
+    }
+  }
+  // furniture, far to near
+  const order = SPR.map(s => { const ox = s.x - pl.x, oy = s.y - pl.y; return { s, d: ox * dx + oy * dy, l: ox * -dy + oy * dx }; }).filter(o => o.d > .2).sort((a, b) => b.d - a.d);
+  for (const { s, d, l } of order) {
+    const scr = (W / 2) * (l / d) / tp + W / 2;
+    const wpx = s.w / d * f, hpx = s.h / d * f;
+    const bot = horizon + (EYE - (s.z || 0)) * f / d, top = bot - hpx;
+    const c0 = Math.floor((scr - wpx / 2) / CW), c1 = Math.ceil((scr + wpx / 2) / CW), r0 = Math.floor(top / CH), r1 = Math.ceil(bot / CH);
+    const Md = MOODS[mood], am = s.glow ? 1 : Math.max(.35, Md.amb) / (1 + d * .1);
+    for (let cc = Math.max(0, c0); cc < Math.min(COLS, c1); cc++) {
+      if (d > zc[cc]) continue;
+      const u = ((cc + .5) * CW - (scr - wpx / 2)) / wpx;
+      for (let rr = Math.max(0, r0); rr < Math.min(ROWS, r1); rr++) {
+        const v = ((rr + .5) * CH - top) / hpx; if (v < 0 || v >= 1 || u < 0 || u >= 1) continue;
+        const line = s.rows[Math.floor(v * s.rows.length)], ch = line[Math.floor(u * s.aw)] || ' ';
+        if (ch === ' ') continue;
+        const i = rr * COLS + cc, o = i * 4;
+        let [r, g, b] = s.c;
+        if (s.art === 'desk' && ch === ':') { const k = hash(cc, Math.floor(t * 6 + rr)); r = .2; g = .9 + k * .1; b = 1; }
+        if (s.art === 'record' && music && (ch === '(' || ch === ')')) { r = Md.a[0]; g = Md.a[1]; b = Md.a[2]; }
+        if (s.art === 'lamp' || s.art === 'flamp') { if (ch === '*' || ch === '/' || ch === '\\') { r = Md.a[0] + .2; g = Md.a[1] + .2; b = Md.a[2] + .2; } }
+        put(i, ch, r * am, g * am, b * am, bg[o] / 255 * .5 + .02, bg[o + 1] / 255 * .5 + .02, bg[o + 2] / 255 * .5 + .03);
+      }
+    }
+  }
+  // flying cars + rain over the city
+  for (const c of cars) {
+    let da = Math.atan2(Math.sin(c.ang - pl.a), Math.cos(c.ang - pl.a)); if (Math.abs(da) > FOV / 2 + .1) continue;
+    const col = Math.floor((W / 2 + Math.tan(da) * f) / CW), row = Math.floor((horizon - c.el * f) / CH);
+    for (let k = 0; k < 6; k++) { const cc = col - Math.sign(c.sp) * k; if (cc < 0 || cc >= COLS || row < 0 || row >= ROWS) continue; const i = row * COLS + cc; if (!cityMask[i]) continue;
+      const fk = 1 - k / 6; put(i, k === 0 ? '#' : k < 3 ? '=' : '-', c.col[0] * fk + (k === 0 ? .3 : 0), c.col[1] * fk + (k === 0 ? .3 : 0), c.col[2] * fk, c.col[0] * .2 * fk, c.col[1] * .2 * fk, c.col[2] * .2 * fk); }
+  }
+  if (rain || sky === 2) for (let col = 0; col < COLS; col += 1) {
+    if (hash(col, 5) > .4) continue; const sp = 1 + hash(col, 8);
+    const row = Math.floor(((hash(col, 2) + t * sp * .9) % 1) * ROWS), i = row * COLS + col;
+    if (cityMask[i]) put(i, '/', .6, .65, .85, bg[i * 4] / 255, bg[i * 4 + 1] / 255, bg[i * 4 + 2] / 255);
+  }
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fgT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, fg);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, bgT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, bg);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+// ======================= music: a little synthwave loop =======================
+const audio = (() => {
+  let ac = null, timer = null, step = 0, nextT = 0, master;
+  const BPM = 96, S16 = 60 / BPM / 4;
+  const prog = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]];     // Am F C G
+  const hz = n => 440 * Math.pow(2, (n - 69) / 12);
+  function ensure(){ if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); master = ac.createGain(); master.gain.value = .5; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200; master.connect(lp).connect(ac.destination); } if (ac.state === 'suspended') ac.resume(); }
+  function note(freq, start, dur, type, vol, cut){
+    const o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
+    o.type = type; o.frequency.value = freq; f.type = 'lowpass'; f.frequency.setValueAtTime(cut, start); f.frequency.exponentialRampToValueAtTime(cut * .3, start + dur);
+    g.gain.setValueAtTime(0.0001, start); g.gain.exponentialRampToValueAtTime(vol, start + .01); g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    o.connect(f).connect(g).connect(master); o.start(start); o.stop(start + dur + .05);
+  }
+  function drum(start, kind){
+    if (kind === 'k') { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.setValueAtTime(140, start); o.frequency.exponentialRampToValueAtTime(40, start + .15); g.gain.setValueAtTime(.7, start); g.gain.exponentialRampToValueAtTime(.001, start + .2); o.connect(g).connect(master); o.start(start); o.stop(start + .22); return; }
+    const b = ac.createBuffer(1, ac.sampleRate * .2, ac.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const s = ac.createBufferSource(), g = ac.createGain(), f = ac.createBiquadFilter(); s.buffer = b; f.type = 'highpass'; f.frequency.value = kind === 'h' ? 7000 : 1800;
+    g.gain.setValueAtTime(kind === 'h' ? .12 : .35, start); g.gain.exponentialRampToValueAtTime(.001, start + (kind === 'h' ? .05 : .18)); s.connect(f).connect(g).connect(master); s.start(start);
+  }
+  function tick(){
+    while (nextT < ac.currentTime + .15) {
+      const bar = Math.floor(step / 16) % 4, s = step % 16, ch = prog[bar];
+      if (s % 2 === 0) note(hz(ch[0] - 24 + (s % 4 === 2 ? 12 : 0)), nextT, S16 * 1.8, 'sawtooth', .22, 900);       // bass
+      note(hz(ch[s % 3] + 12 + (s % 8 > 5 ? 12 : 0)), nextT, S16 * .9, 'square', .05, 2600);                             // arpeggio
+      if (s === 0) ch.forEach(n => note(hz(n), nextT, S16 * 15, 'sawtooth', .045, 1600));                                 // pad
+      if (s % 4 === 0) drum(nextT, 'k'); if (s % 8 === 4) drum(nextT, 's'); if (s % 2 === 1) drum(nextT, 'h');
+      nextT += S16; step++;
+    }
+  }
+  return {
+    on(){ ensure(); nextT = ac.currentTime + .05; step = 0; clearInterval(timer); timer = setInterval(tick, 25); },
+    off(){ clearInterval(timer); timer = null; },
+    blip(f0, f1, d){ try { ensure(); const o = ac.createOscillator(), g = ac.createGain(); o.frequency.setValueAtTime(f0, ac.currentTime); o.frequency.exponentialRampToValueAtTime(f1, ac.currentTime + d); g.gain.value = .06; g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + d); o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + d + .02); } catch (e) {} },
+  };
+})();
+
+// ======================= interactions =======================
+const toastEl = document.getElementById('toast'), promptEl = document.getElementById('prompt'); let toastT;
+function toast(m, ms = 1600){ toastEl.textContent = m; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), ms); }
+function nearby(){
+  // what's in front of you and close enough to use
+  const fx = Math.cos(pl.a), fy = Math.sin(pl.a);
+  for (const s of SPR) if (s.act) { const ox = s.x - pl.x, oy = s.y - pl.y, d = Math.hypot(ox, oy); if (d < 2.1 && (ox * fx + oy * fy) / d > .5) return s.act; }
+  for (let k = .5; k < 2.2; k += .3) { const c = cell(Math.floor(pl.x + fx * k), Math.floor(pl.y + fy * k)); if (c === 'S') return 'tv'; if (c === 'E') return 'elevator'; if (c === 'A') return 'fish'; if (c && OPAQUE.has(c)) break; }
+  return null;
+}
+const LABEL = { music: () => music ? 'stop the music' : 'play some music', tv: () => 'change the channel', lights: () => 'lights: ' + MOODS[(mood + 1) % MOODS.length].name, scope: () => zoom ? 'stop looking' : 'look through the telescope', desk: () => 'boot up the setup', elevator: () => 'call the elevator', fish: () => 'feed the fish' };
+function use(){
+  const a = nearby(); if (!a) return;
+  if (a === 'music') { music = !music; music ? audio.on() : audio.off(); toast(music ? '♪ synthwave on' : 'music off'); }
+  if (a === 'tv') { tvCh = (tvCh + 1) % 4; audio.blip(900, 500, .08); toast(['sunset channel', 'WE DISRUPT news', 'static', 'TV off'][tvCh], 1000); }
+  if (a === 'lights') { mood = (mood + 1) % MOODS.length; audio.blip(1400, 1400, .03); toast('lights: ' + MOODS[mood].name, 1000); }
+  if (a === 'scope') { zoom = !zoom; toast(zoom ? 'zoomed in over the city' : 'back to normal', 1000); }
+  if (a === 'desk') { audio.blip(300, 1200, .25); toast('> all systems online\n> 11 agents running', 2200); }
+  if (a === 'elevator') { audio.blip(880, 880, .15); setTimeout(() => audio.blip(660, 660, .2), 160); toast("you're already on the top floor ✦", 1800); }
+  if (a === 'fish') { toast('the fish say thanks ><>', 1400); }
+  persist();
+}
+promptEl.onclick = use;
+
+// ======================= input =======================
+addEventListener('keydown', e => {
+  keys[e.code] = true; begin();
+  if (e.code === 'KeyE' || e.code === 'Enter') use();
+  if (e.code === 'KeyL') { mood = (mood + 1) % MOODS.length; toast('lights: ' + MOODS[mood].name, 1000); persist(); }
+  if (e.code === 'KeyR') { rain = !rain; toast(rain ? 'rain' : 'clear', 900); persist(); }
+  if (e.code === 'KeyT') { sky = (sky + 1) % SKIES.length; toast('sky: ' + SKIES[sky].name, 1000); persist(); }
+  if (e.code === 'KeyP') photoReq = true;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', e => keys[e.code] = false);
+let drag = null;
+cv.addEventListener('pointerdown', e => { if (TOUCH) return; begin(); drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => { if (!drag) return; pl.a += (e.clientX - drag.x) * .0045; pl.pitch = Math.max(-.35, Math.min(.35, pl.pitch - (e.clientY - drag.y) * .0022)); drag.x = e.clientX; drag.y = e.clientY; });
+addEventListener('pointerup', () => drag = null);
+const joy = { id: null, on: false, x: 0, y: 0, cx: 0, cy: 0 }; let lookId = null, lx = 0, ly = 0;
+const tz = document.getElementById('touch'), joyEl = document.getElementById('joy'), knob = document.getElementById('knob');
+tz.addEventListener('pointerdown', e => {
+  begin();
+  if (e.clientX < innerWidth * .45 && joy.id === null) { joy.id = e.pointerId; joy.on = true; joy.cx = e.clientX; joy.cy = e.clientY; joy.x = joy.y = 0; joyEl.style.display = 'block'; joyEl.style.left = (e.clientX - 58) + 'px'; joyEl.style.top = (e.clientY - 58) + 'px'; knob.style.transform = ''; }
+  else if (lookId === null) { lookId = e.pointerId; lx = e.clientX; ly = e.clientY; }
+  tz.setPointerCapture(e.pointerId);
+});
+tz.addEventListener('pointermove', e => {
+  if (e.pointerId === joy.id) { let ddx = e.clientX - joy.cx, ddy = e.clientY - joy.cy; const d = Math.hypot(ddx, ddy); if (d > 48) { ddx *= 48 / d; ddy *= 48 / d; } joy.x = ddx / 48; joy.y = ddy / 48; knob.style.transform = `translate(${ddx}px,${ddy}px)`; }
+  else if (e.pointerId === lookId) { pl.a += (e.clientX - lx) * .006; pl.pitch = Math.max(-.35, Math.min(.35, pl.pitch - (e.clientY - ly) * .003)); lx = e.clientX; ly = e.clientY; }
+});
+const endT = e => { if (e.pointerId === joy.id) { joy.id = null; joy.on = false; joy.x = joy.y = 0; joyEl.style.display = 'none'; } if (e.pointerId === lookId) lookId = null; };
+tz.addEventListener('pointerup', endT); tz.addEventListener('pointercancel', endT);
+document.getElementById('bUse').addEventListener('pointerdown', e => { e.stopPropagation(); use(); });
+document.getElementById('bRun').addEventListener('pointerdown', e => { e.stopPropagation(); runOn = !runOn; e.currentTarget.classList.toggle('on', runOn); });
+document.getElementById('bLight').onclick = () => { mood = (mood + 1) % MOODS.length; toast('lights: ' + MOODS[mood].name, 1000); persist(); };
+document.getElementById('bRain').onclick = () => { rain = !rain; toast(rain ? 'rain' : 'clear', 900); persist(); };
+document.getElementById('bSky').onclick = () => { sky = (sky + 1) % SKIES.length; toast('sky: ' + SKIES[sky].name, 1000); persist(); };
+document.getElementById('bPhoto').onclick = () => photoReq = true;
+let started = false;
+function begin(){ if (started) return; started = true; document.getElementById('start').style.display = 'none'; }
+document.getElementById('start').addEventListener('pointerdown', e => { e.preventDefault(); begin(); });
+if (TOUCH) document.getElementById('how').innerHTML = 'Tap to enter<br>left thumb: walk · right thumb: look · USE to interact';
+
+// photo mode
+let photoReq = false, photoBlob = null;
+function photo(){ const url = cv.toDataURL('image/png'); document.getElementById('photoImg').src = url; fetch(url).then(r => r.blob()).then(b => photoBlob = b).catch(() => {}); document.getElementById('photo').style.display = 'flex'; }
+document.getElementById('pClose').onclick = () => document.getElementById('photo').style.display = 'none';
+document.getElementById('pShare').onclick = async () => { if (!photoBlob) return; const f = new File([photoBlob], 'penthouse.png', { type: 'image/png' }); try { if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: 'Penthouse · 88F' }); } catch (e) {} };
+
+// ======================= update loop =======================
+function update(dt){
+  t += dt;
+  if (keys.ArrowLeft) pl.a -= 1.9 * dt; if (keys.ArrowRight) pl.a += 1.9 * dt;
+  if (keys.ArrowUp) pl.pitch = Math.min(.35, pl.pitch + dt * .7); if (keys.ArrowDown) pl.pitch = Math.max(-.35, pl.pitch - dt * .7);
+  const fx = Math.cos(pl.a), fy = Math.sin(pl.a);
+  let mx = 0, my = 0;
+  if (keys.KeyW) { mx += fx; my += fy; } if (keys.KeyS) { mx -= fx; my -= fy; }
+  if (keys.KeyA) { mx += fy; my -= fx; } if (keys.KeyD) { mx -= fy; my += fx; }
+  if (joy.on) { const f2 = -joy.y, s2 = joy.x; mx += fx * f2 - fy * s2; my += fy * f2 + fx * s2; }
+  const len = Math.hypot(mx, my);
+  if (len > .05) {
+    const mag = joy.on && !(keys.KeyW || keys.KeyS || keys.KeyA || keys.KeyD) ? Math.min(1, len) : 1;
+    const inPool = cell(pl.x | 0, pl.y | 0) === 'p';
+    const sp = (keys.ShiftLeft || keys.ShiftRight || runOn ? 4.2 : 2.3) * mag * (inPool ? .45 : 1) * dt / len;
+    const nx = pl.x + mx * sp, ny = pl.y + my * sp, R = .22;
+    if (!blocked(nx + Math.sign(mx) * R, pl.y)) pl.x = nx;
+    if (!blocked(pl.x, ny + Math.sign(my) * R)) pl.y = ny;
+    pl.bob += dt * (inPool ? 4 : 9);
+  }
+  FOV += ((zoom ? .38 : 1.15) - FOV) * Math.min(1, dt * 5);
+  if (zoom && Math.hypot(26.5 - pl.x, 1.8 - pl.y) > 2.6) zoom = false;
+  for (const c of cars) c.ang += c.sp * dt;
+  const a = nearby();
+  if (a) { promptEl.style.display = 'block'; promptEl.textContent = (TOUCH ? 'USE · ' : 'E · ') + LABEL[a](); } else promptEl.style.display = 'none';
+}
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  update(dt); render();
+  if (photoReq) { photoReq = false; photo(); }
+  requestAnimationFrame(loop);
+}
+const go = () => { initGL(); layout(); addEventListener('resize', layout); requestAnimationFrame(loop); };
+(document.fonts && document.fonts.load ? document.fonts.load("500 12px 'JetBrains Mono'").then(() => document.fonts.ready) : Promise.resolve()).then(go, go);
+if (location.hash === '#debug') window.__ph = { pl, set sky(v){ sky = v; }, set mood(v){ mood = v; }, set rain(v){ rain = v; }, set tv(v){ tvCh = v; }, use, nearby };
+})();
+</script>
+</body>
+</html>
