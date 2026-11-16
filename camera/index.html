@@ -27,6 +27,15 @@ button.on{color:#000;background:var(--g);border-color:var(--g)}
 #shoot{width:66px;height:66px;border-radius:50%;padding:0;background:transparent;border:4px solid #fff;position:relative}
 #shoot:after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}
 #shoot:active:after{background:var(--g)}
+#rec{width:46px;height:46px;border-radius:50%;padding:0;display:grid;place-items:center}
+#rec i{width:16px;height:16px;border-radius:50%;background:#ff3b3b;display:block;transition:border-radius .2s}
+#rec.on{border-color:#ff3b3b}#rec.on i{border-radius:3px}
+#recT{position:fixed;top:calc(52px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:4;display:none;font:700 13px 'JetBrains Mono';background:#ff3b3b;color:#fff;border-radius:999px;padding:5px 12px}
+#recT.on{display:block}
+#fxRow{display:flex;gap:6px;justify-content:center;overflow-x:auto;scrollbar-width:none;padding:0 4px}
+#fxRow::-webkit-scrollbar{display:none}
+#fxRow button{flex:none}
+#shot video{max-width:100%;max-height:68vh;border-radius:12px;border:1px solid var(--line);display:none}
 label{font-size:11px;color:var(--dim);display:flex;align-items:center;gap:8px}
 input[type=range]{width:150px;accent-color:var(--g)}
 #start{position:fixed;inset:0;z-index:5;display:grid;place-items:center;text-align:center;padding:24px;background:#000}
@@ -46,14 +55,23 @@ input[type=range]{width:150px;accent-color:var(--g)}
 
 <div class="top"><div class="logo">ASCII <b>CAM</b></div><a class="back" href="../">← projects</a></div>
 
+<div id="recT">● 0:00</div>
 <div class="bar">
+  <div id="fxRow">
+    <button data-fx="none" class="on">plain</button>
+    <button data-fx="matrix">matrix</button>
+    <button data-fx="glitch">glitch</button>
+    <button data-fx="fire">fire</button>
+    <button data-fx="rainbow">rainbow</button>
+  </div>
   <div class="row">
     <button id="flip">⟲ flip</button>
     <button id="shoot" aria-label="Take a picture"></button>
-    <button id="look">look: green</button>
+    <button id="rec" aria-label="Record a video"><i></i></button>
   </div>
   <div class="row">
     <label>detail <input id="size" type="range" min="40" max="140" value="72"></label>
+    <button id="look">look: green</button>
     <button id="chars">chars: classic</button>
     <button id="inv">invert</button>
   </div>
@@ -66,7 +84,7 @@ input[type=range]{width:150px;accent-color:var(--g)}
   <div id="err"></div>
 </div></div>
 
-<div id="shot"><img id="shotImg" alt="Your ASCII picture"><p>Press and hold the picture → Save to Photos</p><div class="row"><button id="share">Share</button><button id="close">Close</button></div></div>
+<div id="shot"><img id="shotImg" alt="Your ASCII picture"><video id="shotVid" playsinline loop muted controls></video><p id="shotTip">Press and hold the picture → Save to Photos</p><div class="row"><button id="share">Share</button><button id="close">Close</button></div></div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -80,6 +98,8 @@ const SETS = {
   emoji:   " ·•●⬤"
 };
 const LOOKS = ["green", "color", "mono", "amber"];
+let fx = "none", drops = [], glitchT = 0, glitchRows = [];
+const RAIN = "0123456789ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉ:.=*+-<>";
 let facing = "user", stream = null, setName = "classic", look = 0, invert = false, cols = +$("size").value;
 const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
@@ -126,19 +146,68 @@ function draw(){
   ctx.font = `700 ${ch * 0.92}px "JetBrains Mono", ui-monospace, monospace`;
   ctx.textBaseline = "top";
   const offY = (H - rows * ch) / 2;
+  const now = performance.now();
+  // matrix rain: one falling drop per column
+  if (fx === "matrix") {
+    if (drops.length !== cols) drops = Array.from({length: cols}, () => ({ y: Math.random() * rows * 2 - rows, v: 8 + Math.random() * 14 }));
+    for (const d of drops) { d.y += d.v / 60; if (d.y - 14 > rows) { d.y = -Math.random() * rows * .5; d.v = 8 + Math.random() * 14; } }
+  }
+  // glitch: every few frames pick some row bands to shift sideways
+  if (fx === "glitch" && now > glitchT) {
+    glitchT = now + 60 + Math.random() * 180;
+    glitchRows = []; const n = Math.random() < .35 ? 0 : 1 + Math.floor(Math.random() * 4);
+    for (let k = 0; k < n; k++) { const y0 = Math.floor(Math.random() * rows); glitchRows.push({ y0, y1: y0 + 1 + Math.floor(Math.random() * 6), dx: Math.round((Math.random() - .5) * cols * .3) }); }
+  }
   for (let y = 0; y < rows; y++) {
+    let dx = 0;
+    if (fx === "glitch") for (const g of glitchRows) if (y >= g.y0 && y < g.y1) dx = g.dx;
     for (let x = 0; x < cols; x++) {
-      const i = (y * cols + x) * 4, r = px[i], g = px[i+1], b = px[i+2];
+      let sxp = x;
+      if (fx === "fire") sxp = Math.min(cols - 1, Math.max(0, x + Math.round(Math.sin(y * .7 + now / 90) * .8)));
+      const sx2 = Math.min(cols - 1, Math.max(0, sxp - dx));
+      const i = (y * cols + sx2) * 4, r = px[i], g = px[i+1], b = px[i+2];
       let lum = (0.299*r + 0.587*g + 0.114*b) / 255;
       if (invert) lum = 1 - lum;
-      const c = chars[Math.min(chars.length - 1, Math.floor(lum * chars.length))];
+      let c = chars[Math.min(chars.length - 1, Math.floor(lum * chars.length))];
+      const X = x * cw, Y = offY + y * ch;
+      if (fx === "matrix") {
+        const d = drops[x], t = d.y - y;
+        if (t >= 0 && t < 14) {
+          const k = 1 - t / 14;
+          const rc = RAIN[(x * 7 + Math.floor(d.y) * 3 + y) % RAIN.length];
+          ctx.fillStyle = t < 1 ? "rgba(235,255,235,.95)" : `rgba(80,255,120,${Math.max(k * .9, lum)})`;
+          ctx.fillText(rc, X, Y); continue;
+        }
+        if (c === " ") continue;
+        ctx.fillStyle = `rgba(60,230,100,${0.15 + lum * 0.7})`; ctx.fillText(c, X, Y); continue;
+      }
       if (c === " ") continue;
+      if (fx === "fire") {
+        const heat = Math.min(1, lum * (0.85 + 0.3 * Math.sin(x * 1.3 + y * .9 + now / 70)));
+        const R = 255, G = Math.round(40 + heat * 215), B = Math.round(heat > .8 ? (heat - .8) * 5 * 255 : 0);
+        ctx.fillStyle = `rgba(${R},${G},${B},${0.25 + heat * 0.75})`;
+        if (heat > .55 && Math.random() < .06) c = "^";
+        ctx.fillText(c, X, Y); continue;
+      }
+      if (fx === "rainbow") {
+        const hue = (x * 4 + y * 3 + now / 12) % 360;
+        ctx.fillStyle = `hsla(${hue},100%,${45 + lum * 25}%,${0.35 + lum * 0.65})`; ctx.fillText(c, X, Y); continue;
+      }
       if (L === "color") ctx.fillStyle = `rgb(${r},${g},${b})`;
       else if (L === "green") ctx.fillStyle = `rgba(198,255,0,${0.35 + lum*0.65})`;
       else if (L === "amber") ctx.fillStyle = `rgba(255,176,0,${0.35 + lum*0.65})`;
       else ctx.fillStyle = invert ? "#000" : "#fff";
-      ctx.fillText(c, x * cw, offY + y * ch);
+      if (fx === "glitch" && dx) {   // colour split on shifted bands
+        ctx.globalAlpha = .7; ctx.fillStyle = "#ff2a6d"; ctx.fillText(c, X - cw * .25, Y);
+        ctx.fillStyle = "#05d9e8"; ctx.fillText(c, X + cw * .25, Y); ctx.globalAlpha = 1;
+        ctx.fillStyle = "#fff";
+        if (Math.random() < .08) c = RAIN[Math.floor(Math.random() * RAIN.length)];
+      }
+      ctx.fillText(c, X, Y);
     }
+  }
+  if (fx === "glitch" && glitchRows.length && Math.random() < .3) {   // scanline flash
+    ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fillRect(0, offY + Math.random() * rows * ch, W, ch * (1 + Math.random() * 3));
   }
 }
 
@@ -149,18 +218,63 @@ $("chars").onclick = () => { const k = Object.keys(SETS); setName = k[(k.indexOf
 $("inv").onclick = () => { invert = !invert; $("inv").classList.toggle("on", invert); };
 $("size").oninput = e => cols = +e.target.value;
 
+document.querySelectorAll("#fxRow button").forEach(bt => bt.onclick = () => {
+  fx = bt.dataset.fx; document.querySelectorAll("#fxRow button").forEach(o => o.classList.toggle("on", o === bt));
+});
+
+// ---------- video recording (no sound: add music in Instagram/TikTok) ----------
+let rec = null, recChunks = [], recStart = 0, recTimer = null, lastVid = null, lastVidType = "video/mp4";
+const MAX_REC = 30;
+function pickType(){
+  for (const t of ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"])
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+  return "";
+}
+function startRec(){
+  if (!out.captureStream || !window.MediaRecorder) { alertMsg("Recording isn't supported in this browser. Use Safari on iPhone."); return; }
+  const type = pickType();
+  try { rec = new MediaRecorder(out.captureStream(30), type ? { mimeType: type, videoBitsPerSecond: 8e6 } : undefined); }
+  catch (e) { alertMsg("Couldn't start recording."); return; }
+  lastVidType = (type || "video/mp4").split(";")[0];
+  recChunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
+  rec.onstop = () => {
+    lastVid = new Blob(recChunks, { type: lastVidType });
+    const vEl = $("shotVid"); vEl.src = URL.createObjectURL(lastVid); vEl.style.display = "block"; vEl.play().catch(()=>{});
+    $("shotImg").style.display = "none"; lastBlob = null;
+    $("shotTip").textContent = "Tap Share → Save Video to put it in Photos";
+    $("shot").style.display = "flex";
+  };
+  rec.start(250); recStart = performance.now();
+  $("rec").classList.add("on"); $("recT").classList.add("on");
+  recTimer = setInterval(() => {
+    const s = Math.floor((performance.now() - recStart) / 1000);
+    $("recT").textContent = "● 0:" + String(s).padStart(2, "0");
+    if (s >= MAX_REC) stopRec();
+  }, 200);
+}
+function stopRec(){
+  if (!rec) return;
+  clearInterval(recTimer); $("rec").classList.remove("on"); $("recT").classList.remove("on");
+  try { rec.stop(); } catch (e) {}
+  rec = null;
+}
+function alertMsg(m){ $("recT").textContent = m; $("recT").classList.add("on"); setTimeout(() => $("recT").classList.remove("on"), 3000); }
+$("rec").onclick = () => rec ? stopRec() : startRec();
+
 let lastBlob = null;
 $("shoot").onclick = () => {
   out.toBlob(b => {
     lastBlob = b;
-    $("shotImg").src = URL.createObjectURL(b);
+    $("shotImg").src = URL.createObjectURL(b); $("shotImg").style.display = "block";
+    $("shotVid").style.display = "none"; lastVid = null; $("shotTip").textContent = "Press and hold the picture → Save to Photos";
     $("shot").style.display = "flex";
   }, "image/png");
 };
-$("close").onclick = () => { $("shot").style.display = "none"; };
+$("close").onclick = () => { $("shot").style.display = "none"; try { $("shotVid").pause(); } catch(e) {} };
 $("share").onclick = async () => {
-  if (!lastBlob) return;
-  const f = new File([lastBlob], "ascii-cam.png", { type: "image/png" });
+  const f = lastVid ? new File([lastVid], "ascii-cam." + (lastVidType === "video/webm" ? "webm" : "mp4"), { type: lastVidType })
+                    : lastBlob ? new File([lastBlob], "ascii-cam.png", { type: "image/png" }) : null;
+  if (!f) return;
   try { if (navigator.canShare && navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: "ASCII Cam" }); } catch (e) {}
 };
 
