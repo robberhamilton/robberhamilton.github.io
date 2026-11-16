@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASCII Aquarium — v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#060b16; --ink:#cfe3ff; --dim:#5d7396; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); overflow:hidden; font-family:'JetBrains Mono', ui-monospace, Menlo, monospace; color:var(--ink); }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; cursor:crosshair; }
+  #top { position:fixed; top:4vh; left:0; right:0; text-align:center; pointer-events:none; }
+  #clock { font-size:clamp(40px, 8vw, 88px); font-weight:700; letter-spacing:.04em; color:#e8f1ff; text-shadow:0 0 24px rgba(120,170,255,.25); }
+  #greet { margin-top:4px; font-size:14px; color:var(--dim); letter-spacing:.08em; }
+  #panel { position:fixed; left:16px; bottom:16px; background:rgba(6,11,22,.78); border:1px solid #1b2a44; border-radius:12px; padding:10px 12px; font-size:12.5px; line-height:1.75; min-width:260px; backdrop-filter:blur(4px); }
+  #panel .row { display:flex; gap:10px; align-items:center; white-space:pre; }
+  #panel .name { min-width:64px; cursor:text; outline:none; border-radius:4px; padding:0 2px; }
+  #panel .name:focus { background:#13213a; }
+  #panel .bar { color:var(--dim); }
+  #panel .title { color:var(--dim); font-size:11px; letter-spacing:.12em; margin-bottom:2px; }
+  #controls { position:fixed; right:16px; bottom:16px; display:flex; gap:8px; align-items:center; }
+  button { font:inherit; font-size:12px; color:var(--ink); background:rgba(6,11,22,.78); border:1px solid #1b2a44; border-radius:10px; padding:8px 12px; cursor:pointer; }
+  button:hover { border-color:#3a5784; }
+  #hint { position:fixed; right:16px; top:16px; font-size:11px; color:var(--dim); text-align:right; line-height:1.6; pointer-events:none; }
+  #toast { position:fixed; top:22vh; left:50%; transform:translateX(-50%); background:rgba(10,20,40,.92); border:1px solid #2b4470; border-radius:12px; padding:10px 16px; font-size:13px; opacity:0; transition:opacity .4s; pointer-events:none; white-space:nowrap; }
+  #toast.show { opacity:1; }
+  @media (max-width:640px){ #hint{display:none;} #panel{min-width:0; font-size:11px;} }
+  /* (lab corner) compact mode when embedded as aquarium.html#mini */
+  .mini #hint{display:none}
+  .mini #top{top:10px}
+  .mini #clock{font-size:26px}
+  .mini #greet{font-size:11px}
+  .mini #panel{left:8px;bottom:8px;padding:6px 8px;font-size:10.5px;line-height:1.55;min-width:0}
+  .mini #controls{right:8px;bottom:8px;gap:6px}
+  .mini button{padding:5px 8px;font-size:10.5px}
+  @media (max-width:520px){ .mini #panel .bar{display:none} .mini #controls{flex-direction:column;align-items:flex-end} }
+</style>
+<script>if(location.hash==='#mini')document.documentElement.classList.add('mini');</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="top"><div id="clock">--:--</div><div id="greet"></div></div>
+<div id="panel"><div class="title">YOUR TANK</div><div id="rows"></div></div>
+<div id="hint">click the water to drop food · click a fish to pet it<br>click a name to rename · F = feed</div>
+<div id="controls">
+  <button id="speed" title="How fast the fish get hungry">⏩ demo speed</button>
+  <button id="reset" title="Start the tank over">↺ reset</button>
+</div>
+<div id="toast"></div>
+
+<script>
+(() => {
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let W, H, FS, CW, CH, COLS, ROWS, SURF, SAND, BFS, BCW, BCH;
+
+// ---------- sprites (facing right). swim = tail frames, turn = facing-the-viewer frame ----------
+const SPR = {
+  fish: [
+    { swim: [["><>"], ["}<>"]], turn: ["(o)"] },
+    { swim: [["><(((°>"], ["}<(((°>"], ["=<(((°>"], ["}<(((°>"]], turn: ["((°°))"] },
+    { swim: [
+        ["   _.-._    ", "><(  ))) °> ", "   `-'-`    "],
+        ["   _.-._    ", "}<(  }}} °> ", "   `-'-`    "],
+        ["   _.-._    ", "=<(  ))) °> ", "   `-'-`    "],
+        ["   _.-._    ", "}<(  }}} °> ", "   `-'-`    "]],
+      turn: ["  .-.  ", " ((°°)) ", "  `-'  "] }
+  ],
+  jelly: { swim: [
+      [" .-. ", "(   )", " )|( ", " (|) "],
+      [" .-. ", "(   )", " (|) ", " )|( "],
+      [" ___ ", "(___)", " |)| ", " (|( "]] }
+};
+const MIR = {'<':'>','>':'<','(':')',')':'(','/':'\\','\\':'/','`':"'","'":'`','{':'}','}':'{','[':']',']':'['};
+const mirCache = new Map();
+const mirror = lines => { const k = lines.join('\n'); if (mirCache.has(k)) return mirCache.get(k);
+  const w = Math.max(...lines.map(l=>l.length));
+  const m = lines.map(l => l.padEnd(w).split('').reverse().map(c=>MIR[c]||c).join('')); mirCache.set(k,m); return m; };
+const widthOf = s => Math.max(...s.map(l=>l.length));
+
+// ---------- state ----------
+const DEMO_RATE = 100/180, REAL_RATE = 100/(8*3600);
+const STORE = 'ascii-aquarium-v2';
+const fresh = () => ({ demo:false,   /* (Nov 16, Axl) real time by default */ totalFed:0, unlocked:false, last:Date.now(), pets:[
+  {name:'Pixel', sp:'fish', color:'#ff9f45', hunger:55, fed:4},
+  {name:'Byte',  sp:'fish', color:'#4fd8ff', hunger:35, fed:0},
+  {name:'Koi',   sp:'fish', color:'#ff6fae', hunger:80, fed:10} ]});
+let S; try { S = JSON.parse(localStorage.getItem(STORE)); } catch(e) {}
+if (!S || !S.pets) S = fresh();
+{ const away = Math.max(0,(Date.now()-S.last)/1000), r = S.demo?DEMO_RATE:REAL_RATE; S.pets.forEach(p=>p.hunger=Math.max(0,p.hunger-away*r)); }
+// (Nov 16) the browser's own storage gets wiped inside the Lab and in Safari, so the tank is also kept in the
+// artifact's database (doc tank/state) and loaded from there — settings like real time now stick.
+let tankDb = null, dbTimer = null;
+const save = () => { S.last = Date.now(); try { localStorage.setItem(STORE, JSON.stringify(S)); } catch(e) {}
+  if (tankDb) { clearTimeout(dbTimer); dbTimer = setTimeout(()=>{ tankDb.doc('tank/state').set(JSON.parse(JSON.stringify(S))).catch(()=>{}); }, 800); } };
+const stageOf = p => p.sp==='jelly' ? 0 : (p.fed>=10 ? 2 : p.fed>=4 ? 1 : 0);
+
+let fish = [];
+const food = [], bubbles = [], hearts = [], plankton = [], ripples = [], school = [];
+let weeds = [], farWeeds = [], sand = [], rocks = [], schoolGoal = {x:0,y:0,t:0};
+
+function spawnBody(p){
+  return { p, x: 6 + Math.random()*(COLS-24), y: SURF+3+Math.random()*Math.max(1,(SAND-SURF-10)),
+           tx:null, ty:null, dir: Math.random()<.5?1:-1, vx:0, vy:0, ph:Math.random()*10, anim:Math.random()*4,
+           turnT:0, pending:1, petT:0 };
+}
+
+// ---------- layout ----------
+function layout(){
+  const dpr = window.devicePixelRatio||1;
+  W = innerWidth; H = innerHeight;
+  cv.width = W*dpr; cv.height = H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  FS = W < 640 ? 12 : 15; BFS = Math.round(FS*0.68);
+  ctx.font = `${FS}px 'JetBrains Mono', monospace`; CW = ctx.measureText('M').width; CH = Math.round(FS*1.2);
+  ctx.font = `${BFS}px 'JetBrains Mono', monospace`; BCW = ctx.measureText('M').width; BCH = Math.round(BFS*1.2);
+  COLS = Math.ceil(W/CW); ROWS = Math.ceil(H/CH);
+  SURF = Math.max(6, Math.floor(ROWS*0.27)); SAND = ROWS-3;
+  const sc = ".,:;'`._ ";
+  sand = []; for (let r=0;r<3;r++){ const line=[]; for(let c=0;c<COLS;c++) line.push(r===0 ? (Math.random()<.5?'_':'.') : sc[Math.floor(Math.random()*sc.length)]); sand.push(line); }
+  weeds = []; const n = Math.max(4, Math.floor(COLS/14));
+  for (let i=0;i<n;i++) weeds.push({ x: Math.floor((i+0.3+Math.random()*0.4)*COLS/n), h: 4+Math.floor(Math.random()*Math.min(10,(SAND-SURF)*0.45)), ph:Math.random()*6, col:['#3fae6a','#2f8f57','#5cc97f'][i%3] });
+  // far layer (smaller font, dim): distant weeds on a back ridge
+  const bcols = Math.ceil(W/BCW), bfloor = Math.floor((SAND*CH)/BCH) - 3;
+  farWeeds = []; for (let i=0;i<Math.floor(bcols/9);i++) farWeeds.push({ x: Math.floor(Math.random()*bcols), base: bfloor - Math.floor(Math.random()*3), h: 3+Math.floor(Math.random()*7), ph: Math.random()*6 });
+  rocks = [
+    { x: Math.floor(COLS*0.72), art:["   |>  ","  _|_  "," |[ ]| ","_|_^_|_"], col:'#8a96b3' },
+    { x: Math.floor(COLS*0.18), art:["  .--.  "," (    ) ","(______)"], col:'#6b7894' } ];
+  plankton.length = 0; for (let i=0;i<Math.floor(COLS*ROWS/200);i++) plankton.push({x:Math.random()*COLS,y:SURF+1+Math.random()*(SAND-SURF-1),z:Math.random(),c:Math.random()<.5?'.':'·'});
+  // background school (pixel space)
+  if (!school.length) for (let i=0;i<22;i++) school.push({ x: W*0.3+Math.random()*120, y: H*0.5+Math.random()*60, vx: 30, vy: 0, a: Math.random()*6 });
+  fish.forEach(f=>{ f.x=Math.min(f.x,COLS-14); f.y=Math.min(Math.max(f.y,SURF+2),SAND-5); });
+}
+
+// ---------- helpers ----------
+const def = f => f.p.sp==='jelly' ? SPR.jelly : SPR.fish[stageOf(f.p)];
+const swimSprite = f => { const d = def(f); const s = d.swim[Math.floor(f.anim)%d.swim.length]; return (f.p.sp==='fish' && f.dir<0) ? mirror(s) : s; };
+const size = f => { const s = def(f).swim[0]; return {w:widthOf(s), h:s.length}; };
+const mouth = f => { const {w,h} = size(f); if (f.p.sp==='jelly') return {x:f.x+w/2, y:f.y+h}; return {x: f.dir>0? f.x+w : f.x, y: f.y+Math.floor(h/2)}; };
+const rgb = hex => { const n=parseInt(hex.slice(1),16); return [n>>16,(n>>8)&255,n&255]; };
+const mix = (hex, sat, light=1) => { let [r,g,b]=rgb(hex); const gr=(r+g+b)/3; r=(r*sat+gr*(1-sat))*light; g=(g*sat+gr*(1-sat))*light; b=(b*sat+gr*(1-sat))*light; return `rgb(${Math.min(255,r)|0},${Math.min(255,g)|0},${Math.min(255,b)|0})`; };
+const put = (ch,x,y,col) => { if (ch===' ') return; ctx.fillStyle=col; ctx.fillText(ch, x*CW, y*CH); };
+const current = (y,t) => 0.7*Math.sin(t*0.25 + y*0.15) + 0.3*Math.sin(t*0.7);
+// caustic light field: bright web of light that slides around
+const caustic = (c,r,t) => Math.sin(c*0.45 + t*1.3 + r*0.3) + Math.sin(c*0.23 - t*0.9 + r*0.5) + Math.sin((c+r)*0.31 + t*0.6);
+const toastEl = document.getElementById('toast'); let toastT;
+const toast = msg => { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(()=>toastEl.classList.remove('show'), 2600); };
+
+function dropFood(cx){
+  ripples.push({x:cx, t:0});
+  for (let i=0;i<3;i++) food.push({x: Math.min(COLS-2,Math.max(1,cx + (Math.random()*4-2))), y: SURF + Math.random()*0.5, age:0, vy: 1.4+Math.random()*.8, spin:Math.random()*6});
+}
+function eat(f, k){
+  food.splice(k,1);
+  const p = f.p, before = stageOf(p);
+  p.hunger = Math.min(100, p.hunger+22); p.fed++; S.totalFed++;
+  const m = mouth(f); hearts.push({x:m.x, y:m.y-1, t:0});
+  f.anim += 1;
+  if (stageOf(p) > before) toast(`${p.name} grew bigger!`);
+  if (!S.unlocked && S.totalFed >= 12) {
+    S.unlocked = true; const j = {name:'Jelly', sp:'jelly', color:'#c9a4ff', hunger:70, fed:0};
+    S.pets.push(j); fish.push(spawnBody(j)); toast('A new pet drifted in: Jelly 🪼');
+  }
+  renderPanel(); save();
+}
+
+// ---------- update ----------
+let lastT = performance.now(), bubbleT = 0;
+function update(dt){
+  const rate = S.demo ? DEMO_RATE : REAL_RATE, t = performance.now()/1000;
+  for (const f of fish){
+    const p = f.p; p.hunger = Math.max(0, p.hunger - rate*dt);
+    const {w,h} = size(f), energy = 0.35 + 0.65*(p.hunger/100), jelly = p.sp==='jelly';
+    let target=null, tk=-1;
+    if (p.hunger < 85 && food.length){ let best=1e9; const m=mouth(f); food.forEach((fd,k)=>{ const d=(fd.x-m.x)**2+(fd.y-m.y)**2; if(d<best){best=d;target=fd;tk=k;} }); }
+    let wantX, wantY, spd, steer;
+    if (target){
+      const m = mouth(f), dx = target.x-m.x, dy = target.y-m.y, d = Math.hypot(dx,dy);
+      if (d < 1.3 && f.turnT<=0){ eat(f, tk); continue; }
+      spd = (jelly?4:9)*Math.max(.6,energy); wantX=dx/d*spd; wantY=dy/d*spd*0.8; steer=3;
+      // only turn for food that is clearly behind the body, not right at the mouth
+      const rel = target.x - (f.x + w/2); f.foodDir = Math.abs(rel) > w*0.75 ? Math.sign(rel) : f.dir;
+    } else {
+      if (f.tx===null || Math.hypot(f.tx-f.x,f.ty-f.y) < 1.5 || Math.random()<dt*0.07){
+        f.tx = 2 + Math.random()*(COLS-w-4);
+        const lo = SURF+2, hi = SAND-h-1;
+        f.ty = p.hunger < 20 ? hi - Math.random()*2 : lo + Math.random()*Math.max(1,hi-lo);
+      }
+      spd = (jelly?1.6:4)*energy; const dx=f.tx-f.x, dy=f.ty-f.y, d=Math.hypot(dx,dy)||1;
+      wantX=dx/d*spd; wantY=dy/d*spd*0.45; steer=1.1;
+    }
+    if (jelly){
+      // jelly: pulses upward, sinks between pulses
+      const pulse = Math.max(0, Math.sin(t*2.2+f.ph)); wantY = wantY*0.4 - pulse*2.2 + 0.9; wantX *= 0.6;
+      f.anim = pulse>0.6 ? 2 : (t*1.5+f.ph)%2;
+    }
+    // turning: a fish facing the wrong way stops, shows its face, then flips
+    const wantDir = target ? f.foodDir : (wantX>0.6?1:wantX<-0.6?-1:f.dir);
+    f.cool = Math.max(0,(f.cool||0)-dt);
+    if (!jelly && wantDir!==f.dir && f.turnT<=0 && f.cool<=0){ f.turnT = 0.32; f.pending = wantDir; }
+    if (f.turnT>0){ f.turnT -= dt; f.vx *= Math.pow(0.02,dt); if (f.turnT<=0){ f.dir=f.pending; f.cool=0.8; } }
+    else if (wantX*f.dir < 0 && !jelly){ f.vx += (0 - f.vx)*Math.min(1,dt*steer); }
+    else { f.vx += (wantX - f.vx)*Math.min(1,dt*steer); }
+    f.vy += (wantY - f.vy)*Math.min(1,dt*steer);
+    f.x += f.vx*dt; f.y += (f.vy + Math.sin(t*1.7+f.ph)*0.25)*dt;
+    if (!jelly) f.anim += dt*(2.5 + Math.abs(f.vx)*0.9);
+    f.x = Math.max(0, Math.min(COLS-w-1, f.x)); f.y = Math.max(SURF+1, Math.min(SAND-h, f.y));
+    if (f.petT>0) f.petT -= dt;
+  }
+  // food drifts with the current, slows near the floor, settles on sand
+  for (let i=food.length-1;i>=0;i--){ const fd=food[i]; fd.age+=dt;
+    if (fd.y < SAND-1){ const nearFloor = Math.min(1,(SAND-1-fd.y)/3); fd.y += fd.vy*(0.35+0.65*nearFloor)*dt; fd.x += current(fd.y,t)*0.8*dt; }
+    if (fd.age>25) food.splice(i,1); }
+  bubbleT -= dt;
+  if (bubbleT<=0 && weeds.length){ const w = weeds[Math.floor(Math.random()*weeds.length)]; bubbles.push({x:w.x+(Math.random()*2-1), y:SAND-1, age:0}); bubbleT = .35+Math.random()*.8; }
+  for (const f of fish) if (Math.random()<dt*0.12){ const m=mouth(f); bubbles.push({x:m.x,y:m.y-0.5,age:0}); }
+  for (let i=bubbles.length-1;i>=0;i--){ const b=bubbles[i]; b.age+=dt; b.y -= (2.2+b.age*.7)*dt; b.x += (Math.sin(b.age*4+i)*0.6 + current(b.y,t)*0.4)*dt; if (b.y < SURF){ ripples.push({x:b.x,t:0.5,small:true}); bubbles.splice(i,1); } }
+  for (let i=hearts.length-1;i>=0;i--){ const hh=hearts[i]; hh.t+=dt; hh.y-=2*dt; if (hh.t>1.4) hearts.splice(i,1); }
+  for (let i=ripples.length-1;i>=0;i--){ ripples[i].t+=dt; if (ripples[i].t>1.3) ripples.splice(i,1); }
+  for (const pl of plankton){ pl.x += (current(pl.y,t)*0.5 + 0.15)*(0.4+pl.z)*dt; if (pl.x>COLS) pl.x=0; if (pl.x<0) pl.x=COLS; }
+  // background school: simple flocking towards a wandering goal
+  schoolGoal.t -= dt;
+  if (schoolGoal.t<=0){ schoolGoal.x = W*(0.1+Math.random()*0.8); schoolGoal.y = (SURF+3)*CH + Math.random()*((SAND-SURF-8)*CH); schoolGoal.t = 6+Math.random()*6; }
+  let cx=0, cy=0, ax=0, ay=0; school.forEach(s=>{cx+=s.x;cy+=s.y;ax+=s.vx;ay+=s.vy;}); const n=school.length; cx/=n; cy/=n; ax/=n; ay/=n;
+  for (const s of school){
+    let fx = (schoolGoal.x-s.x)*0.08 + (cx-s.x)*0.25 + (ax-s.vx)*0.6, fy = (schoolGoal.y-s.y)*0.08 + (cy-s.y)*0.25 + (ay-s.vy)*0.6;
+    for (const o of school){ if (o===s) continue; const dx=s.x-o.x, dy=s.y-o.y, d2=dx*dx+dy*dy; if (d2<220){ fx+=dx*6/(d2+1)*20; fy+=dy*6/(d2+1)*20; } }
+    s.vx += fx*dt; s.vy += fy*dt; const sp = Math.hypot(s.vx,s.vy), mx = 46; if (sp>mx){ s.vx*=mx/sp; s.vy*=mx/sp; }
+    s.x += s.vx*dt; s.y += s.vy*dt; s.a += dt*(3+sp*0.08);
+    s.y = Math.max((SURF+2)*CH, Math.min((SAND-3)*CH, s.y));
+  }
+}
+
+// ---------- draw ----------
+function draw(){
+  const t = performance.now()/1000;
+  ctx.clearRect(0,0,W,H);
+  const g = ctx.createLinearGradient(0,SURF*CH,0,H); g.addColorStop(0,'#0c2140'); g.addColorStop(0.6,'#081428'); g.addColorStop(1,'#050a14');
+  ctx.fillStyle = g; ctx.fillRect(0,SURF*CH,W,H-SURF*CH);
+  ctx.textBaseline = 'top';
+
+  // --- far layer (small font, hazy) ---
+  ctx.font = `${BFS}px 'JetBrains Mono', monospace`;
+  for (const w of farWeeds) for (let k=0;k<w.h;k++){ const sway=Math.sin(t*0.9+w.ph+k*0.4)*(k/w.h)*1.2; ctx.fillStyle='rgba(60,140,110,0.22)'; ctx.fillText(k%2?')':'(', (w.x+sway)*BCW, (w.base-k)*BCH); }
+  for (const s of school){ const right = s.vx>=0; const tail = Math.sin(s.a)>0; const ch = right ? (tail?'~>':'->') : (tail?'<~':'<-');
+    ctx.fillStyle='rgba(150,190,235,0.32)'; ctx.fillText(ch, s.x, s.y); }
+
+  ctx.font = `${FS}px 'JetBrains Mono', monospace`;
+  // light rays from the surface, slanted, slowly breathing
+  for (let c=-20;c<COLS;c++){ const v = Math.sin(c*0.12 + t*0.3) + 0.6*Math.sin(c*0.05 - t*0.17);
+    if (v>1.0){ const a = (v-1.0)*0.09; for (let r=SURF+1;r<SAND;r++){ if (((r+c)%3)===0){ const fade = 1-(r-SURF)/(SAND-SURF); put('/', c+(r-SURF)*0.35, r, `rgba(150,200,255,${(a*fade).toFixed(3)})`); } } } }
+  // plankton at different depths
+  for (const pl of plankton) put(pl.c, pl.x, pl.y, `rgba(170,210,255,${(0.08+pl.z*0.2).toFixed(2)})`);
+  // surface: waves + highlight row + ripples
+  for (let c=0;c<COLS;c++){ const v = Math.sin(c*0.35 + t*1.6) + Math.sin(c*0.11 - t*0.9);
+    put(v>0.6?'~':v>-0.4?'-':'_', c, SURF, v>0.6?'#9fd0ff':'#4d7fbf');
+    const hl = Math.sin(c*0.5 - t*2.1) + Math.sin(c*0.21 + t*1.3); if (hl>1.5) put(hl>1.8?'`':'.', c, SURF+1, 'rgba(180,220,255,0.35)'); }
+  for (const rp of ripples){ const r = rp.t*(rp.small?4:9), a = Math.max(0,1-rp.t/1.3)*(rp.small?0.5:1);
+    put('(', rp.x-r, SURF, `rgba(220,240,255,${a.toFixed(2)})`); put(')', rp.x+r, SURF, `rgba(220,240,255,${a.toFixed(2)})`);
+    if (!rp.small && rp.t<0.25) put('°', rp.x, SURF-1, `rgba(220,240,255,${(1-rp.t*4).toFixed(2)})`); }
+  // caustic light on the water just above the floor
+  for (let r=SAND-3;r<SAND;r++) for (let c=0;c<COLS;c++){ const v=caustic(c,r,t); if (v>1.9) put('-', c, r+0.35, `rgba(200,230,255,${((v-1.9)*0.25*(1-(SAND-r)/4)).toFixed(3)})`); }
+  // rocks (lit by caustics)
+  for (const r of rocks){ r.art.forEach((l,i)=>{ const row=SAND-r.art.length+i; for (let k=0;k<l.length;k++){ const v=caustic(r.x+k,row,t); put(l[k], r.x+k, row, v>1.6 ? '#c4cde4' : r.col); } }); }
+  // seaweed
+  for (const w of weeds){ for (let k=0;k<w.h;k++){ const sway = Math.sin(t*1.3 + w.ph + k*0.45) * (k/w.h) * 1.6 + current(SAND-k,t)*0.4*(k/w.h); put(k%2? ')':'(', w.x+sway, SAND-1-k, w.col); } }
+  // sand with moving caustics
+  sand.forEach((line,r)=>line.forEach((ch,c)=>{ const v=caustic(c,SAND+r,t); const lit=v>1.5;
+    put(lit && r===0 ? '~' : ch, c, SAND+r, lit ? (r===0?'#ffe6a6':'#e1c68a') : (r===0?'#c8a86b':'#9c8458')); }));
+  // food: little flakes that tumble
+  for (const fd of food) put(Math.sin(t*4+fd.spin)>0?'*':'+', fd.x, fd.y, '#ffd35a');
+  // pets
+  for (const f of fish){
+    const p = f.p, hungry = p.hunger < 25;
+    const v = caustic(Math.floor(f.x), Math.floor(f.y), t); const light = 1 + Math.max(0,v-1.4)*0.18;
+    const col = mix(p.color, hungry?0.25:1, hungry?0.8:light);
+    const {w} = size(f);
+    let spr = swimSprite(f), ox = 0;
+    if (f.turnT>0 && p.sp==='fish'){ spr = def(f).turn; ox = (w - widthOf(spr))/2; }
+    spr.forEach((l,i)=>{ for (let k=0;k<l.length;k++) put(l[k], f.x+ox+k, f.y+i, col); });
+    if (hungry && Math.sin(t*4)>-0.3) put('!', f.x+w/2, f.y-1.2, '#ffcf5a');
+    if (f.petT>0) put('♥', f.x+w/2, f.y-1.2-(1-f.petT), '#ff7fb0');
+  }
+  for (const b of bubbles) put(b.age<0.8?'.':b.age<2?'o':'O', b.x, b.y, 'rgba(170,220,255,0.7)');
+  for (const hh of hearts) put('♥', hh.x, hh.y, `rgba(255,127,176,${(1-hh.t/1.4).toFixed(2)})`);
+}
+
+// ---------- panel ----------
+const rowsEl = document.getElementById('rows');
+function renderPanel(){
+  rowsEl.innerHTML = '';
+  S.pets.forEach((p,i)=>{
+    const row = document.createElement('div'); row.className='row';
+    const nm = document.createElement('span'); nm.className='name'; nm.contentEditable='true'; nm.spellcheck=false; nm.textContent=p.name; nm.style.color=p.color;
+    nm.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); nm.blur(); } e.stopPropagation(); });
+    nm.addEventListener('blur', ()=>{ const v = nm.textContent.trim().slice(0,12); if (v) { p.name=v; save(); } nm.textContent=p.name; });
+    const sp = document.createElement('span'); sp.style.color=p.color; sp.style.minWidth='96px';
+    sp.textContent = p.sp==='jelly' ? '(|)' : SPR.fish[Math.min(stageOf(p),1)].swim[0][0].trim() + (stageOf(p)===2?' +':'');
+    const bar = document.createElement('span'); bar.className='bar'; bar.dataset.i=i;
+    row.append(nm, sp, bar); rowsEl.append(row);
+  });
+  updateBars();
+}
+function updateBars(){
+  rowsEl.querySelectorAll('.bar').forEach(b=>{
+    const p = S.pets[b.dataset.i]; const n = Math.round(p.hunger/10);
+    const mood = p.hunger>70?'happy':p.hunger>25?'ok':'hungry';
+    b.innerHTML = `[<span style="color:${p.hunger<25?'#ffcf5a':p.color}">${'█'.repeat(n)}</span>${'·'.repeat(10-n)}] ${mood}`;
+  });
+}
+function tick(){
+  const d = new Date(), h = d.getHours();
+  document.getElementById('clock').textContent = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  const hungry = S.pets.filter(p=>p.hunger<25).map(p=>p.name);
+  document.getElementById('greet').textContent = hungry.length ? `${hungry.join(' & ')} ${hungry.length>1?'are':'is'} hungry` : (h<5?'still up?':h<12?'good morning':h<18?'good afternoon':'good evening');
+}
+
+// ---------- input ----------
+cv.addEventListener('click', e=>{
+  const cx = e.clientX/CW, cy = e.clientY/CH;
+  for (const f of fish){ const {w,h}=size(f); if (cx>=f.x-0.5 && cx<=f.x+w+0.5 && cy>=f.y-0.5 && cy<=f.y+h+0.5){ f.petT = 1; f.vy -= 2; toast(`${f.p.name} likes that ♥`); return; } }
+  if (cy > SURF-3) dropFood(cx);
+});
+addEventListener('keydown', e=>{ if (e.key==='f'||e.key==='F') dropFood(4+Math.random()*(COLS-8)); });
+const speedBtn = document.getElementById('speed');
+const setSpeedLabel = () => speedBtn.textContent = S.demo ? '⏩ demo speed' : '🕒 real time';
+speedBtn.onclick = ()=>{ S.demo=!S.demo; setSpeedLabel(); save(); toast(S.demo?'Demo speed: hungry in ~3 min':'Real time: hungry in ~8 hours'); };
+document.getElementById('reset').onclick = ()=>{ S = fresh(); fish = S.pets.map(spawnBody); food.length=0; renderPanel(); setSpeedLabel(); save(); toast('Fresh tank'); };
+addEventListener('resize', layout);
+addEventListener('beforeunload', save);
+
+function loop(now){ const dt = Math.min(0.05,(now-lastT)/1000); lastT = now; update(dt); draw(); requestAnimationFrame(loop); }
+const start = ()=>{ layout(); fish = S.pets.map(spawnBody); renderPanel(); setSpeedLabel(); tick(); setInterval(tick,1000); setInterval(updateBars,500); setInterval(save,5000); requestAnimationFrame(loop); };
+(document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(start);
+})();
+
+// ---------- (Nov 16) load the saved tank from the Lab's database ----------
+(async ()=>{
+  try { tankDb = window.claude ? await claude.use('db') : null; } catch(e) { tankDb = null; }
+  if (!tankDb) return;
+  try {
+    const snap = await tankDb.doc('tank/state').get();
+    const v = snap && (typeof snap.data === 'function' ? snap.data() : snap.data);
+    if (v && v.pets && v.pets.length) {
+      const away = Math.max(0,(Date.now()-(v.last||Date.now()))/1000), r = v.demo?DEMO_RATE:REAL_RATE;
+      v.pets.forEach(p=>p.hunger=Math.max(0,p.hunger-away*r));
+      S = v; fish = S.pets.map(spawnBody); renderPanel(); setSpeedLabel();
+      try { localStorage.setItem(STORE, JSON.stringify(S)); } catch(e) {}
+    } else { save(); }
+  } catch(e) {}
+})();
+</script>
+
+</body>
+</html>

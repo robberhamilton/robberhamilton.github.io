@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASCII Island</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html,body { margin:0; height:100%; background:#000; overflow:hidden; font-family:'JetBrains Mono', ui-monospace, Menlo, monospace; color:#dfe9ff; }
+  canvas { position:fixed; inset:0; width:100%; height:100%; display:block; cursor:grab; }
+  canvas:active { cursor:grabbing; }
+  .hud { position:fixed; font-size:12px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:8px 12px; line-height:1.7; pointer-events:none; }
+  #title { top:14px; left:14px; letter-spacing:.18em; font-weight:700; }
+  #title small { display:block; letter-spacing:.04em; font-weight:500; opacity:.6; }
+  #help { bottom:14px; left:14px; opacity:.85; }
+  #stats { top:14px; right:14px; text-align:right; opacity:.75; }
+  #start { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  #start div { background:rgba(0,0,0,.7); border:1px solid rgba(255,255,255,.2); border-radius:14px; padding:14px 20px; font-size:14px; }
+  kbd { border:1px solid rgba(255,255,255,.3); border-radius:4px; padding:0 5px; font-family:inherit; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud" id="title">ASCII ISLAND<small>every pixel here is a text character</small></div>
+<div class="hud" id="help"><kbd>W A S D</kbd> walk &nbsp; <kbd>drag</kbd> or <kbd>← →</kbd> look &nbsp; <kbd>Shift</kbd> run &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>T</kbd> time of day &nbsp; <kbd>C</kbd> colour / mono</div>
+<div class="hud" id="stats"></div>
+<div id="start"><div>Click and drag to look around · <kbd>W</kbd> to walk</div></div>
+
+<script>
+(() => {
+// ================= world generation =================
+const N = 512, WATER = 0;
+const H = new Float32Array(N*N);     // terrain height
+const MAT = new Uint8Array(N*N);     // 1 sand 2 grass 3 forest-floor 4 rock 5 tree 6 lighthouse 7 lamp 8 hut 9 dock
+const SHADE = new Float32Array(N*N); // sun lighting 0..1
+const TINT = new Float32Array(N*N);  // per-texel colour variation
+const HASH = new Float32Array(N*N);
+
+let seed = 1337;
+const rnd = () => (seed = (seed*16807) % 2147483647) / 2147483647;
+const hash2 = (x,y) => { let h = x*374761393 + y*668265263; h = (h^(h>>>13))*1274126177; return ((h^(h>>>16))>>>0)/4294967295; };
+const smooth = t => t*t*(3-2*t);
+function vnoise(x,y){ const xi=Math.floor(x), yi=Math.floor(y), xf=x-xi, yf=y-yi;
+  const a=hash2(xi,yi), b=hash2(xi+1,yi), c=hash2(xi,yi+1), d=hash2(xi+1,yi+1); const u=smooth(xf), v=smooth(yf);
+  return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v; }
+function fbm(x,y,o=5){ let s=0,a=0.5,f=1; for(let i=0;i<o;i++){ s+=a*vnoise(x*f,y*f); f*=2.03; a*=0.5; } return s; }
+
+const C = N/2;
+for (let y=0;y<N;y++) for (let x=0;x<N;x++){
+  const dx=(x-C)/(N*0.40), dy=(y-C)/(N*0.36);
+  const warp = (fbm(x*0.008+10,y*0.008)-0.5)*0.55;
+  const d = Math.sqrt(dx*dx+dy*dy) + warp;
+  const mask = 1 - smooth(Math.min(1,Math.max(0,(d-0.35)/0.65)));
+  let h = (fbm(x*0.012,y*0.012)*0.9 + 0.1) * mask * 34 - 9;
+  h += Math.pow(mask,3) * 26 * fbm(x*0.006+50,y*0.006+50);   // central hills
+  h += (vnoise(x*0.15,y*0.15)-0.5)*0.6*mask;                  // small bumps
+  H[y*N+x] = h; HASH[y*N+x] = hash2(x*7+3,y*13+1); TINT[y*N+x] = fbm(x*0.05+99,y*0.05)*2-1;
+}
+const idx = (x,y) => (y&(N-1))*N + (x&(N-1));
+const inMap = (x,y) => x>=0 && y>=0 && x<N && y<N;
+
+// materials from height + slope
+for (let y=1;y<N-1;y++) for (let x=1;x<N-1;x++){
+  const i=y*N+x, h=H[i], s=Math.hypot(H[i+1]-H[i-1], H[i+N]-H[i-N]);
+  MAT[i] = h < 1.6 ? 1 : (s > 2.6 || h > 30) ? 4 : (fbm(x*0.02+7,y*0.02+7) > 0.56 ? 3 : 2);
+}
+// trees: cone bumps on grass / forest floor
+seed = 99;
+function addCone(cx,cy,r,ht,mat){
+  for (let y=Math.floor(cy-r);y<=cy+r;y++) for (let x=Math.floor(cx-r);x<=cx+r;x++){
+    if (!inMap(x,y)) continue; const d=Math.hypot(x-cx,y-cy); if (d>r) continue;
+    const i=y*N+x, base=H[i], top=ht*(1-d/r)**0.8;
+    if (top>0.4){ H[i]=Math.max(H[i], base+top); MAT[i]=mat; }
+  }
+}
+const treeSpots=[];
+for (let k=0;k<4500 && treeSpots.length<700;k++){
+  const x=4+rnd()*(N-8), y=4+rnd()*(N-8), i=idx(x|0,y|0);
+  if ((MAT[i]===3 && rnd()<0.9) || (MAT[i]===2 && rnd()<0.12)) if (H[i]>2.5 && H[i]<24){ treeSpots.push([x,y]); }
+}
+treeSpots.forEach(([x,y])=>addCone(x,y,1.8+rnd()*1.6,5+rnd()*5,5));
+
+// lighthouse on the coast: walk outward from the centre until we hit the beach
+let LH = null;
+for (let r=40;r<N/2;r++){ const a=-0.6, x=C+Math.cos(a)*r, y=C+Math.sin(a)*r; if (H[idx(x|0,y|0)] < 2.4){ LH={x,y}; break; } }
+if (LH){
+  const {x:lx,y:ly}=LH, base=4;
+  for (let y=ly-9;y<=ly+9;y++) for (let x=lx-9;x<=lx+9;x++){ const d=Math.hypot(x-lx,y-ly); if(d<9 && inMap(x|0,y|0)){ const i=idx(x|0,y|0); H[i]=Math.max(H[i], base*(1-smooth(Math.max(0,(d-6)/3)))); if (d<7) MAT[i]=4; } }
+  for (let y=ly-4;y<=ly+4;y++) for (let x=lx-4;x<=lx+4;x++){ const d=Math.hypot(x-lx,y-ly); if (d<=3.6){ const i=idx(x|0,y|0); H[i]=base+34; MAT[i]= d<=1.8 ? 7 : 6; } }
+  LH.base=base; LH.top=base+34;
+}
+// small hut + dock on the opposite beach
+let HUT=null;
+for (let r=40;r<N/2;r++){ const a=2.3, x=C+Math.cos(a)*r, y=C+Math.sin(a)*r; if (H[idx(x|0,y|0)] < 2.2){ HUT={x:x-Math.cos(a)*10,y:y-Math.sin(a)*10,a}; break; } }
+if (HUT){
+  const {x:hx,y:hy,a}=HUT, g=H[idx(hx|0,hy|0)];
+  for (let y=hy-5;y<=hy+5;y++) for (let x=hx-5;x<=hx+5;x++){ const i=idx(x|0,y|0); const dx=Math.abs(x-hx), dy=Math.abs(y-hy);
+    if (dx<=4 && dy<=4){ const roof = 9 - Math.max(dx,dy)*1.1; H[i]=g+Math.max(5,roof); MAT[i]=8; } }
+  // dock planks out into the water
+  for (let s=8;s<34;s+=0.5){ for (let w=-1.5;w<=1.5;w+=0.5){ const x=hx+Math.cos(a)*s - Math.sin(a)*w, y=hy+Math.sin(a)*s + Math.cos(a)*w; const i=idx(x|0,y|0); H[i]=Math.max(H[i], 1.4); MAT[i]=9; } }
+  HUT.g=g;
+}
+// lighting (sun from the north-west, recomputed when time of day changes)
+function relight(sx,sy,sz){
+  for (let y=1;y<N-1;y++) for (let x=1;x<N-1;x++){
+    const i=y*N+x; let nx=H[i-1]-H[i+1], ny=H[i-N]-H[i+N], nz=2; const l=Math.hypot(nx,ny,nz); nx/=l; ny/=l; nz/=l;
+    SHADE[i] = Math.max(0, nx*sx+ny*sy+nz*sz);
+  }
+}
+
+// ================= time of day =================
+const PRESETS = [
+  { name:'day',    sun:[-0.55,-0.45,0.70], amb:0.42, skyTop:[0.20,0.45,0.85], skyHor:[0.72,0.86,0.98], sunCol:[1.0,0.96,0.80], light:1.0,  night:0 },
+  { name:'sunset', sun:[ 0.85, 0.10,0.18], amb:0.40, skyTop:[0.20,0.18,0.42], skyHor:[1.00,0.55,0.32], sunCol:[1.0,0.62,0.35], light:0.85, night:0.15 },
+  { name:'night',  sun:[ 0.30, 0.55,0.35], amb:0.24, skyTop:[0.01,0.02,0.07], skyHor:[0.06,0.10,0.22], sunCol:[0.70,0.80,1.00], light:0.35, night:1 },
+];
+let tod = 0, P = JSON.parse(JSON.stringify(PRESETS[0]));
+relight(...P.sun);
+const lerp=(a,b,t)=>a+(b-a)*t;
+function stepTime(dt){
+  const T = PRESETS[tod]; const k = Math.min(1, dt*1.5); let changed=false;
+  for (const key of ['sun','skyTop','skyHor','sunCol']) for (let j=0;j<3;j++){ const v=lerp(P[key][j],T[key][j],k); if (Math.abs(v-P[key][j])>1e-4) changed=true; P[key][j]=v; }
+  for (const key of ['amb','light','night']) P[key]=lerp(P[key],T[key],k);
+  return changed;
+}
+let relightT = 0;
+
+// ================= player =================
+const heightAt = (x,y) => {
+  if (x<0||y<0||x>=N-1||y>=N-1) return -12;
+  const xi=x|0, yi=y|0, xf=x-xi, yf=y-yi, i=yi*N+xi;
+  return (H[i]*(1-xf)+H[i+1]*xf)*(1-yf) + (H[i+N]*(1-xf)+H[i+N+1]*xf)*yf;
+};
+const groundAt = (x,y) => Math.max(heightAt(x,y), WATER-1.2);
+const pl = { x: C - 30, y: C + 60, z: 0, vz: 0, yaw: -Math.PI/2 - 0.5, pitch: 0.05 };
+// start on the beach near the hut if there is one
+if (HUT){ pl.x = HUT.x - Math.cos(HUT.a)*14; pl.y = HUT.y - Math.sin(HUT.a)*14; pl.yaw = HUT.a + 0.9; }
+pl.z = groundAt(pl.x,pl.y);
+const EYE = 2.4;
+const keys = {};
+addEventListener('keydown', e => { keys[e.code]=true;
+  if (e.code==='KeyT'){ tod=(tod+1)%PRESETS.length; }
+  if (e.code==='KeyC'){ mono=!mono; }
+  if (e.code==='Space' && pl.onGround){ pl.vz = 9; pl.onGround=false; }
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  startEl.style.display='none';
+});
+addEventListener('keyup', e => keys[e.code]=false);
+let mono = false;
+
+// ================= birds =================
+const birds = Array.from({length:7}, (_,i)=>({ r: 60+Math.random()*90, a: Math.random()*6.28, h: 38+Math.random()*25, s: 0.08+Math.random()*0.08, cx: C+(Math.random()-0.5)*60, cy: C+(Math.random()-0.5)*60, f: Math.random()*6 }));
+
+// ================= rendering (WebGL: every character drawn in one call) =================
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl', {antialias:false, alpha:false});
+const startEl = document.getElementById('start'), statsEl = document.getElementById('stats');
+const GLYPHS = " .,:;'`\"-_~=+*^!|/\\()<>[]{}ivxo%#&@$MWO";
+const GI = {}; [...GLYPHS].forEach((g,i)=>GI[g]=i);
+let COLS, ROWS, CWp, CHp, dpr, W, Hpx, fg, bg, ybuf;
+let atlasTex, fgTex, bgTex, prog, uLoc = {};
+
+function shader(type, src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s); return s; }
+function initGL(){
+  const vs = `attribute vec2 p; varying vec2 uv; void main(){ uv = p*0.5+0.5; uv.y = 1.0-uv.y; gl_Position = vec4(p,0.,1.); }`;
+  const fs = `precision mediump float; varying vec2 uv;
+    uniform sampler2D atlas, fgT, bgT; uniform vec2 grid, agrid;
+    void main(){
+      vec2 g = uv*grid; vec2 cell = floor(g); vec2 local = fract(g);
+      vec4 f = texture2D(fgT, (cell+0.5)/grid); vec3 b = texture2D(bgT, (cell+0.5)/grid).rgb;
+      float gi = floor(f.a*255.0+0.5);
+      vec2 a = (vec2(mod(gi, agrid.x), floor(gi/agrid.x)) + local) / agrid;
+      float cov = texture2D(atlas, a).r;
+      gl_FragColor = vec4(mix(b, f.rgb, cov), 1.0);
+    }`;
+  prog = gl.createProgram(); gl.attachShader(prog, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(prog); gl.useProgram(prog);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog,'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+  for (const n of ['atlas','fgT','bgT','grid','agrid']) uLoc[n]=gl.getUniformLocation(prog,n);
+  const mk = () => { const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; };
+  atlasTex=mk(); fgTex=mk(); bgTex=mk();
+  gl.uniform1i(uLoc.atlas,0); gl.uniform1i(uLoc.fgT,1); gl.uniform1i(uLoc.bgT,2);
+}
+const AG = 16;
+function layout(){
+  dpr = Math.min(2, window.devicePixelRatio||1);
+  W = innerWidth; Hpx = innerHeight;
+  const fs = W < 700 ? 10 : (W > 1700 ? 14 : 12);
+  const m = document.createElement('canvas').getContext('2d'); m.font = `500 ${fs}px 'JetBrains Mono', monospace`;
+  const cw = m.measureText('M').width, ch = Math.round(fs*1.25);
+  COLS = Math.floor(W/cw); ROWS = Math.floor(Hpx/ch);
+  CWp = Math.round(cw*dpr); CHp = Math.round(ch*dpr);
+  cv.width = COLS*CWp; cv.height = ROWS*CHp;
+  cv.style.width = (COLS*CWp/dpr)+'px'; cv.style.height = (ROWS*CHp/dpr)+'px';
+  cv.style.left = ((W - COLS*CWp/dpr)/2)+'px'; cv.style.top = ((Hpx - ROWS*CHp/dpr)/2)+'px';
+  gl.viewport(0,0,cv.width,cv.height);
+  // glyph atlas
+  const arows = Math.ceil(GLYPHS.length/AG);
+  const ac = document.createElement('canvas'); ac.width = AG*CWp; ac.height = arows*CHp;
+  const x = ac.getContext('2d'); x.fillStyle='#000'; x.fillRect(0,0,ac.width,ac.height);
+  x.font = `500 ${fs*dpr}px 'JetBrains Mono', monospace`; x.textAlign='center'; x.textBaseline='middle'; x.fillStyle='#fff';
+  [...GLYPHS].forEach((g,i)=>{ x.fillText(g, (i%AG)*CWp + CWp/2, Math.floor(i/AG)*CHp + CHp/2 + dpr); });
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,ac);
+  gl.uniform2f(uLoc.grid, COLS, ROWS); gl.uniform2f(uLoc.agrid, AG, arows);
+  fg = new Uint8Array(COLS*ROWS*4); bg = new Uint8Array(COLS*ROWS*4); ybuf = new Float32Array(COLS);
+  CELLW = cw; CELLH = ch;
+}
+let CELLW, CELLH;
+
+// material looks: [r,g,b], ramp of characters from dark to bright
+const LOOK = {
+  1: { c:[0.93,0.84,0.60], ramp:".,:;:*" },
+  2: { c:[0.42,0.74,0.30], ramp:".,'\";\"" },
+  3: { c:[0.28,0.56,0.24], ramp:".,;\":%" },
+  4: { c:[0.55,0.56,0.60], ramp:".:+=#%@" },
+  5: { c:[0.16,0.48,0.22], ramp:":;%&#@" },
+  8: { c:[0.62,0.40,0.24], ramp:"=#%#=#" },
+  9: { c:[0.55,0.38,0.22], ramp:"==##==" },
+};
+const clamp01 = v => v<0?0:v>1?1:v;
+
+function setCell(i, ch, r,g,b, br,bgc,bb){
+  const o=i*4;
+  if (mono){ const l=(r*0.3+g*0.59+b*0.11); r=g=b=l; const lb=(br*0.3+bgc*0.59+bb*0.11)*0.4; br=bgc=bb=lb; }
+  fg[o]=clamp01(r)*255; fg[o+1]=clamp01(g)*255; fg[o+2]=clamp01(b)*255; fg[o+3]=GI[ch]??0;
+  bg[o]=clamp01(br)*255; bg[o+1]=clamp01(bgc)*255; bg[o+2]=clamp01(bb)*255; bg[o+3]=255;
+}
+
+const FOV = 1.25, MAXD = 900;
+let t = 0;
+function render(){
+  const focal = (W/2)/Math.tan(FOV/2);
+  const fx = Math.cos(pl.yaw), fy = Math.sin(pl.yaw), rx = -fy, ry = fx;
+  const camH = pl.z + EYE;
+  const horizon = Hpx/2 + pl.pitch*Hpx;
+  const [stx, sty, stz] = P.sun;
+  const sunYaw = Math.atan2(sty, stx), sunEl = Math.asin(Math.min(1,stz));
+  // where the sun / moon sits on screen
+  let dYaw = sunYaw - pl.yaw; dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+  const sunX = Math.abs(dYaw) < 1.4 ? W/2 + Math.tan(dYaw)*focal : -1e4;
+  const sunY = horizon - Math.tan(sunEl)*focal;
+  const sunR = 26;
+  const night = P.night, light = P.light, amb = P.amb;
+  const hor = P.skyHor, top = P.skyTop, sc = P.sunCol;
+
+  for (let col=0; col<COLS; col++){
+    const sx = (col+0.5)*CELLW;
+    const k = (sx - W/2)/focal;
+    const dx = fx + rx*k, dy = fy + ry*k;
+    let yb = ROWS;           // lowest row still empty
+    let z = 0.4;
+    while (z < MAXD && yb > 0){
+      const px = pl.x + dx*z, py = pl.y + dy*z;
+      let h, mat = 0, depth = 0, i = -1;
+      if (px<0||py<0||px>=N-1||py>=N-1){ h = WATER; mat = 0; depth = 20; }
+      else {
+        i = (py|0)*N + (px|0);
+        const th = (z < 60) ? heightAt(px,py) : H[i];
+        if (th < WATER){ h = WATER; mat = 0; depth = WATER - th; } else { h = th; mat = MAT[i]; }
+      }
+      const rowF = (horizon + (camH - h)*focal/z) / CELLH;
+      if (rowF < yb){
+        const r0 = Math.max(0, Math.ceil(rowF));
+        const fog = Math.pow(clamp01((z-40)/(MAXD*0.75)), 1.15);
+        for (let row=r0; row<yb; row++){
+          const ci = row*COLS + col;
+          let ch, r,g,b, bgf = 0.42, wr=0, wg=0, wb=0;
+          if (mat === 0){
+            // water: animated waves, shallow = turquoise, deep = navy, sun glints
+            const w = Math.sin(px*0.35 + t*1.3) + Math.sin(py*0.27 - t*0.9) + Math.sin((px+py)*0.13 + t*0.5);
+            const sh = clamp01(1 - depth/7);
+            r = lerp(0.07,0.20,sh); g = lerp(0.28,0.66,sh); b = lerp(0.55,0.76,sh);
+            const bright = 0.85 + w*0.10;
+            r*=bright*Math.max(light,0.45); g*=bright*Math.max(light,0.45); b*=bright*Math.max(light,0.45);
+            wr=r; wg=g; wb=b; bgf = 0.62;
+            ch = w>1.6 ? '~' : w>0.4 ? '-' : w>-0.9 ? '.' : ' ';
+            if (depth < 1.2 && w > 0.9){ ch='~'; r=g=b=0.95*Math.max(light,0.5); bgf = -1; }   // surf at the shore
+            const glint = Math.abs(Math.atan2(Math.sin(Math.atan2(dy,dx)-sunYaw),Math.cos(Math.atan2(dy,dx)-sunYaw)));
+            if (w > 2.1 && glint < 0.35 && z > 8){ ch = night>0.5 ? '.' : '*'; r=sc[0]; g=sc[1]; b=sc[2]; }
+            if (ch===' ') ch='.';
+          } else {
+            const L = LOOK[mat];
+            const sh = SHADE[i] ?? 0.6, hv = HASH[i] ?? 0.5, tv = TINT[i] ?? 0;
+            let lum = amb + sh*(1-amb)*light;
+            if (mat === 6 || mat === 7){
+              // lighthouse: red / white rings by world height on this row
+              const wh = camH - (row*CELLH + CELLH/2 - horizon)*z/focal;
+              if (mat === 7 && wh > LH.top - 4){ ch='@'; r=1; g=0.85; b=0.35; if (night<0.5){ r*=lum; g*=lum; b*=lum; } }
+              else { const band = Math.floor((wh - LH.base)/4)%2===0; ch = band ? '#' : '='; r = band?0.85:0.95; g = band?0.22:0.95; b = band?0.20:0.95; r*=lum; g*=lum; b*=lum; }
+            } else if (mat === 8){
+              const wh = camH - (row*CELLH + CELLH/2 - horizon)*z/focal;
+              const roof = wh > HUT.g + 5.2;
+              ch = roof ? (hv>0.5?'/':'\\') : (Math.floor(wh)%2? '=' : '|');
+              const c = roof ? [0.80,0.62,0.30] : L.c; r=c[0]*lum; g=c[1]*lum; b=c[2]*lum;
+            } else {
+              const rampPos = clamp01(lum*0.95 + (hv-0.5)*0.35);
+              ch = L.ramp[Math.min(L.ramp.length-1, Math.floor(rampPos*L.ramp.length))];
+              const v = 1 + tv*0.18;
+              r = L.c[0]*lum*v; g = L.c[1]*lum*v; b = L.c[2]*lum*v;
+              if (mat === 5 && row === r0 && z < 120) ch = '^';
+            }
+          }
+          // fog towards the horizon colour
+          r = lerp(r, hor[0], fog); g = lerp(g, hor[1], fog); b = lerp(b, hor[2], fog);
+          if (bgf < 0){ const fw=fog; setCell(ci, ch, r,g,b, lerp(wr*0.62,hor[0],fw), lerp(wg*0.62,hor[1],fw), lerp(wb*0.62,hor[2],fw)); }
+          else setCell(ci, ch, r,g,b, r*bgf, g*bgf, b*bgf);
+        }
+        yb = r0;
+      }
+      z += 0.05 + z*0.011;
+    }
+    ybuf[col] = yb;
+    // sky
+    for (let row=0; row<yb; row++){
+      const sy = row*CELLH + CELLH/2;
+      const tt = clamp01((horizon - sy)/(Hpx*0.75));
+      let r = lerp(hor[0], top[0], tt), g = lerp(hor[1], top[1], tt), b = lerp(hor[2], top[2], tt);
+      let ch = ' ', fr=r, fgc=g, fb=b;
+      // clouds that rotate with the view
+      const ang = pl.yaw + Math.atan(k);
+      const cu = ang*7 + t*0.03, cvv = (horizon - sy)/Hpx*9;
+      if (sy < horizon){
+        const cn = fbm(cu, cvv*1.6, 4);
+        if (cn > 0.56){ const d = (cn-0.56)/0.3; ch = d>0.75?'%':d>0.45?'=':d>0.2?'~':'.'; const cl = lerp(0.85,1.0,d)*(night>0.5?0.35:1);
+          fr = lerp(r, cl*(sc[0]*0.4+0.6), 0.9); fgc = lerp(g, cl*(sc[1]*0.4+0.6), 0.9); fb = lerp(b, cl*(sc[2]*0.4+0.6), 0.9); }
+        // stars
+        if (night > 0.5 && ch===' '){ const hs = hash2(Math.floor(ang*60), row); if (hs > 0.985){ ch = hs>0.996?'*':'.'; fr=fgc=fb=0.9*night; } }
+      }
+      // sun / moon
+      const ds = Math.hypot(sx - sunX, (sy - sunY)*1.0);
+      if (ds < sunR*3.2){
+        const glow = clamp01(1 - ds/(sunR*3.2))**2;
+        r = lerp(r, sc[0], glow*0.6); g = lerp(g, sc[1], glow*0.6); b = lerp(b, sc[2], glow*0.6);
+        if (ds < sunR){ ch = ds < sunR*0.6 ? '@' : 'O'; fr=1; fgc=lerp(0.95,1,night); fb=lerp(0.7,1,night); }
+        else if (ds < sunR*1.5 && ch===' '){ ch='.'; fr=sc[0]; fgc=sc[1]; fb=sc[2]; }
+      }
+      setCell(row*COLS+col, ch, fr,fgc,fb, r,g,b);
+    }
+  }
+  // birds, hidden behind terrain
+  for (const bd of birds){
+    const bx = bd.cx + Math.cos(bd.a)*bd.r, by = bd.cy + Math.sin(bd.a)*bd.r;
+    const rx0 = bx - pl.x, ry0 = by - pl.y;
+    const depth = rx0*fx + ry0*fy; if (depth < 3) continue;
+    const lateral = rx0*rx + ry0*ry;
+    const col = Math.floor((W/2 + lateral/depth*focal)/CELLW);
+    const row = Math.floor((horizon + (camH - bd.h)*focal/depth)/CELLH);
+    if (col<0||col>=COLS-1||row<0||row>=ROWS) continue;
+    if (row >= ybuf[col]) continue;
+    const flap = Math.sin(t*8 + bd.f) > 0;
+    const c = night>0.5 ? 0.6 : 0.12;
+    const i = row*COLS+col, o=i*4;
+    if (flap){ setCell(i, 'v', c,c,c, bg[o]/255,bg[o+1]/255,bg[o+2]/255); }
+    else { setCell(i, '-', c,c,c, bg[o]/255,bg[o+1]/255,bg[o+2]/255); if (col+1<COLS && row<ybuf[col+1]){ const o2=(i+1)*4; setCell(i+1,'-',c,c,c,bg[o2]/255,bg[o2+1]/255,bg[o2+2]/255);} }
+  }
+  // crosshair-free: upload and draw everything in one call
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fgTex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,COLS,ROWS,0,gl.RGBA,gl.UNSIGNED_BYTE,fg);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, bgTex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,COLS,ROWS,0,gl.RGBA,gl.UNSIGNED_BYTE,bg);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+// ================= input: drag to look =================
+let dragging = false, lx = 0, ly = 0;
+cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); startEl.style.display='none'; });
+cv.addEventListener('pointermove', e => { if (!dragging) return; pl.yaw += (e.clientX-lx)*0.0045; pl.pitch = Math.max(-0.45, Math.min(0.55, pl.pitch + (e.clientY-ly)*0.0025)); lx=e.clientX; ly=e.clientY; });
+cv.addEventListener('pointerup', () => dragging = false);
+cv.addEventListener('pointercancel', () => dragging = false);
+
+function update(dt){
+  t += dt;
+  if (keys.ArrowLeft) pl.yaw -= 1.8*dt; if (keys.ArrowRight) pl.yaw += 1.8*dt;
+  if (keys.ArrowUp) pl.pitch = Math.min(0.55, pl.pitch + dt*0.8); if (keys.ArrowDown) pl.pitch = Math.max(-0.45, pl.pitch - dt*0.8);
+  const run = keys.ShiftLeft || keys.ShiftRight;
+  const sp = (run ? 26 : 11) * dt;
+  let mx = 0, my = 0; const fx = Math.cos(pl.yaw), fy = Math.sin(pl.yaw);
+  if (keys.KeyW){ mx += fx; my += fy; } if (keys.KeyS){ mx -= fx; my -= fy; }
+  if (keys.KeyA){ mx += fy; my -= fx; } if (keys.KeyD){ mx -= fy; my += fx; }
+  const len = Math.hypot(mx,my);
+  const inWater = heightAt(pl.x,pl.y) < WATER - 0.6;
+  if (len > 0){
+    const s = sp * (inWater ? 0.45 : 1) / len;
+    const nx = pl.x + mx*s, ny = pl.y + my*s;
+    const gN = groundAt(nx,ny), mat = MAT[idx(nx|0,ny|0)];
+    const blocked = mat===6 || mat===7 || mat===8 || gN - pl.z > 3.2 || heightAt(nx,ny) < WATER - 3.5 || nx<2||ny<2||nx>N-3||ny>N-3;
+    if (!blocked){ pl.x = nx; pl.y = ny; }
+  }
+  const g = groundAt(pl.x,pl.y);
+  pl.vz -= 24*dt; pl.z += pl.vz*dt;
+  if (pl.z <= g){ pl.z = lerp(pl.z, g, Math.min(1, dt*14)); if (pl.z < g - 1) pl.z = g - 1; pl.vz = 0; pl.onGround = true; }
+  for (const b of birds){ b.a += b.s*dt; }
+  if (stepTime(dt)){ relightT -= dt; if (relightT <= 0){ relight(...P.sun); relightT = 0.25; } }
+}
+
+let last = performance.now(), fpsT = 0, frames = 0, fps = 0;
+function loop(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  update(dt); render();
+  frames++; fpsT += dt; if (fpsT > 0.5){ fps = Math.round(frames/fpsT); frames = 0; fpsT = 0;
+    const where = heightAt(pl.x,pl.y) < WATER - 0.6 ? 'wading' : ({1:'beach',2:'meadow',3:'forest',4:'rocks',5:'forest',9:'dock'}[MAT[idx(pl.x|0,pl.y|0)]] || 'island');
+    statsEl.textContent = `${COLS}×${ROWS} characters · ${fps} fps · ${PRESETS[tod].name} · ${where}`; }
+  requestAnimationFrame(loop);
+}
+const go = () => { initGL(); layout(); addEventListener('resize', layout); requestAnimationFrame(loop); };
+(document.fonts && document.fonts.load ? document.fonts.load("500 12px 'JetBrains Mono'").then(()=>document.fonts.ready) : Promise.resolve()).then(go, go);
+})();
+</script>
+</body>
+</html>
