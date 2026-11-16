@@ -56,17 +56,17 @@
 <body>
 <canvas id="c"></canvas>
 <div class="hud" id="title">ASCII ISLAND<small>every pixel here is a text character</small></div>
-<div class="hud" id="help"><kbd>W A S D</kbd> walk &nbsp; <kbd>drag</kbd> or <kbd>← →</kbd> look &nbsp; <kbd>Shift</kbd> run &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>E</kbd> use &nbsp; <kbd>T</kbd> skip time &nbsp; <kbd>C</kbd> colour &nbsp; <kbd>P</kbd> photo &nbsp; <kbd>M</kbd> sound</div>
+<div class="hud" id="help"><kbd>W A S D</kbd> walk &nbsp; <kbd>drag</kbd> or <kbd>← →</kbd> look &nbsp; <kbd>Shift</kbd> run &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>E</kbd> use &nbsp; <kbd>T</kbd> skip time &nbsp; <kbd>R</kbd> rain &nbsp; <kbd>C</kbd> colour &nbsp; <kbd>P</kbd> photo &nbsp; <kbd>M</kbd> sound</div>
 <div class="hud" id="shells">@ shells 0/10</div>
 <canvas id="map" width="128" height="128"></canvas>
 <div id="toast"></div>
 <div id="touch"><div id="joy"><div id="knob"></div></div></div>
 <div id="btns"><button class="tbtn" id="bRun">RUN</button><button class="tbtn" id="bJump">JUMP</button></div>
-<div id="tools"><button class="tbtn" id="bPhoto" title="Photo (P)">◉</button><button class="tbtn" id="bSound" title="Sound (M)">♪</button><button class="tbtn" id="bTime" title="Skip time (T)">☼</button></div>
+<div id="tools"><button class="tbtn" id="bPhoto" title="Photo (P)">◉</button><button class="tbtn" id="bSound" title="Sound (M)">♪</button><button class="tbtn" id="bTime" title="Skip time (T)">☼</button><button class="tbtn" id="bRain" title="Rain (R)">/</button></div>
 <button class="tbtn" id="bFire">sit by the fire · sleep till morning</button>
 <div id="photo"><img id="photoImg" alt="ASCII Island photo"><p id="photoTip">Press and hold the picture → Save to Photos</p><div class="row"><button class="tbtn" id="pShare">Share</button><button class="tbtn" id="pClose">Close</button></div></div>
 <div class="hud" id="stats"></div>
-<div id="start"><div><b>ASCII ISLAND</b>Find the 10 hidden shells <span style="color:#ffc9a8">@</span>, then open the treasure by the lighthouse.<br><br><span id="startHow">Click to start · <kbd>W A S D</kbd> walk · drag to look</span></div></div>
+<div id="start"><div><b>ASCII ISLAND</b>Find the 10 hidden shells <span style="color:#ffc9a8">@</span>, open the treasure by the lighthouse, and visit the neon city at night.<br><br><span id="startHow">Click to start · <kbd>W A S D</kbd> walk · drag to look</span></div></div>
 
 <script>
 (() => {
@@ -142,6 +142,48 @@ if (HUT){
   for (let s=8;s<34;s+=0.5){ for (let w=-1.5;w<=1.5;w+=0.5){ const x=hx+Math.cos(a)*s - Math.sin(a)*w, y=hy+Math.sin(a)*s + Math.cos(a)*w; const i=idx(x|0,y|0); H[i]=Math.max(H[i], 1.4); MAT[i]=9; } }
   HUT.g=g;
 }
+// ================= neon district (cyberpunk city block) =================
+const BID = new Uint8Array(N*N); const BLDS = [null]; let DIST = null;
+{
+  const PAL = [[1,0.22,0.75],[0.2,0.95,1],[0.7,0.35,1],[1,0.85,0.25],[0.3,1,0.55]];
+  const WORDS = ['WEDISRUPT','NEON','RAMEN','HOTEL','24H','ASCII','OPEN','CLAUDE'];
+  for (const S of [44,36,28]){
+    let best = 1e9;
+    for (let cy=S+14; cy<N-S-14; cy+=10) for (let cx=S+14; cx<N-S-14; cx+=10){
+      if (LH && Math.hypot(cx-LH.x,cy-LH.y) < S+30) continue;
+      if (HUT && Math.hypot(cx-HUT.x,cy-HUT.y) < S+34) continue;
+      let mn=1e9, mx=-1e9, sum=0, n=0;
+      for (let y=cy-S;y<=cy+S;y+=4) for (let x=cx-S;x<=cx+S;x+=4){ const h=H[y*N+x]; if(h<mn)mn=h; if(h>mx)mx=h; sum+=h; n++; }
+      if (mn < 2.8) continue;
+      if (mx-mn < best){ best = mx-mn; DIST = {cx, cy, S, flat: Math.max(3, sum/n)}; }
+    }
+    if (DIST) break;
+  }
+  if (DIST){
+    const {cx,cy,S,flat} = DIST, M = 12;
+    for (let y=cy-S-M; y<=cy+S+M; y++) for (let x=cx-S-M; x<=cx+S+M; x++){
+      if (!inMap(x,y)) continue; const d = Math.max(Math.abs(x-cx), Math.abs(y-cy)), i = y*N+x;
+      if (d <= S){ H[i] = flat; MAT[i] = 11; }
+      else { const k = smooth((d-S)/M); H[i] = flat + (H[i]-flat)*k; }
+    }
+    const cell = 16, cnt = Math.floor(2*S/cell); DIST.cell = cell; DIST.ox = cx - cnt*cell/2; DIST.oy = cy - cnt*cell/2;
+    let signs = 0; seed = 4242;
+    for (let gy=0; gy<cnt; gy++) for (let gx=0; gx<cnt; gx++){
+      if (rnd() < 0.14) continue;                       // a few open plazas
+      const bcx = DIST.ox + gx*cell + cell/2, bcy = DIST.oy + gy*cell + cell/2;
+      const w = Math.round(3 + rnd()*1.8), cd = Math.hypot(bcx-cx, bcy-cy)/S;
+      const h = 14 + rnd()*22 + Math.max(0,1-cd)*30, id = BLDS.length;
+      const B = { id, g: flat, h, neon: PAL[Math.floor(rnd()*PAL.length)], blink: rnd() < 0.3 };
+      BLDS.push(B);
+      for (let y=Math.round(bcy-w); y<=Math.round(bcy+w); y++) for (let x=Math.round(bcx-w); x<=Math.round(bcx+w); x++){ const i=y*N+x; H[i]=flat+h; MAT[i]=10; BID[i]=id; }
+      if (signs < WORDS.length && rnd() < 0.45){
+        B.word = WORDS[signs++]; B.signTop = flat + Math.max(h*0.85, B.word.length*2.2 + 5);
+        const sx = Math.round(bcx + (rnd()<0.5?-1:1)*(w+2)), sy = Math.round(bcy + (rnd()<0.5?-1:1)*(w+2));
+        for (let y=sy; y<sy+2; y++) for (let x=sx; x<sx+2; x++){ const i=y*N+x; H[i]=B.signTop; MAT[i]=12; BID[i]=id; }
+      }
+    }
+  }
+}
 // lighting (sun from the north-west, recomputed when time of day changes)
 function relight(sx,sy,sz){
   for (let y=1;y<N-1;y++) for (let x=1;x<N-1;x++){
@@ -154,6 +196,7 @@ function relight(sx,sy,sz){
 const PRESETS = [
   { name:'day',    sun:[-0.55,-0.45,0.70], amb:0.42, skyTop:[0.20,0.45,0.85], skyHor:[0.72,0.86,0.98], sunCol:[1.0,0.96,0.80], light:1.0,  night:0 },
   { name:'sunset', sun:[ 0.85, 0.10,0.18], amb:0.40, skyTop:[0.20,0.18,0.42], skyHor:[1.00,0.55,0.32], sunCol:[1.0,0.62,0.35], light:0.85, night:0.15 },
+  { name:'neon',   sun:[ 0.30, 0.55,0.35], amb:0.20, skyTop:[0.03,0.01,0.09], skyHor:[0.32,0.06,0.34], sunCol:[1.00,0.35,0.85], light:0.30, night:1 },
   { name:'night',  sun:[ 0.30, 0.55,0.35], amb:0.24, skyTop:[0.01,0.02,0.07], skyHor:[0.06,0.10,0.22], sunCol:[0.70,0.80,1.00], light:0.35, night:1 },
 ];
 let tod = 0, P = JSON.parse(JSON.stringify(PRESETS[0]));
@@ -178,6 +221,7 @@ const pl = { x: C - 30, y: C + 60, z: 0, vz: 0, yaw: -Math.PI/2 - 0.5, pitch: 0.
 // start on the beach near the hut if there is one
 if (HUT){ pl.x = HUT.x - Math.cos(HUT.a)*14; pl.y = HUT.y - Math.sin(HUT.a)*14; pl.yaw = HUT.a + 0.9; }
 pl.z = groundAt(pl.x,pl.y);
+if (DIST) pl.yaw = Math.atan2(DIST.cy - pl.y, DIST.cx - pl.x);
 const EYE = 2.4;
 const keys = {};
 addEventListener('keydown', e => { keys[e.code]=true;
@@ -185,6 +229,7 @@ addEventListener('keydown', e => { keys[e.code]=true;
   if (e.code==='KeyP'){ photoReq = true; }
   if (e.code==='KeyM'){ toggleSound(); }
   if (e.code==='KeyE'){ useFire(); }
+  if (e.code==='KeyR'){ toggleRain(); }
   if (e.code==='KeyC'){ mono=!mono; }
   if (e.code==='Space' && pl.onGround){ pl.vz = 9; pl.onGround=false; }
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
@@ -208,7 +253,7 @@ let persistT = 0;
 // day/night: one full day every 8 minutes (day → sunset → night → dawn)
 let dayT = save.dayT || 0.08, fastBlend = 0;
 const DAY_LEN = 480;
-function phaseOf(d){ return d < 0.46 ? 0 : d < 0.55 ? 1 : d < 0.90 ? 2 : 1; }
+function phaseOf(d){ return d < 0.46 ? 0 : d < 0.55 ? 1 : d < 0.90 ? 3 : 1; }
 function dayCycle(dt){ dayT = (dayT + dt/DAY_LEN) % 1; tod = phaseOf(dayT); }
 function skipTime(){ const marks = [0.0, 0.46, 0.55, 0.90]; const nxt = marks.find(m => m > dayT + 0.001); dayT = nxt === undefined ? 0 : nxt; fastBlend = 2.5; tod = phaseOf(dayT); }
 tod = phaseOf(dayT); P = JSON.parse(JSON.stringify(PRESETS[tod])); relight(...P.sun);
@@ -288,6 +333,7 @@ function game(dt){
   persistT -= dt; if (persistT <= 0){ persistT = 5; persist(); }
   sfx.update(dt);
 }
+function toggleRain(){ if (rainTarget > 0){ rainTarget = 0; rainTimer = 240; toast('rain off', 900); } else { rainTarget = 1; rainTimer = 600; toast('let it rain', 900); } }
 function useFire(){
   if (!(FIRE && Math.hypot(FIRE.x - pl.x, FIRE.y - pl.y) < 7 && P.night > 0.5)) return;
   dayT = 0.91; fastBlend = 3; tod = phaseOf(dayT); toast('you rest by the fire…\ngood morning ☼', 2600);
@@ -341,6 +387,17 @@ function drawExtras(fx,fy,rx,ry,focal,horizon,camH,night){
     const on = Math.sin(t*2.3 + fl.ph) > 0.35; if (!on) continue;
     put(fl.x + Math.sin(t*0.7 + fl.ph)*1.5, fl.y + Math.cos(t*0.6 + fl.ph)*1.5, groundAt(fl.x,fl.y) + fl.h + Math.sin(t + fl.ph)*0.4, Math.sin(t*9 + fl.ph) > 0 ? '*' : '.', 0.85, 1, 0.35);
   }
+  // flying cars with light trails
+  for (const cr of cars){
+    for (let j=6; j>=0; j--){
+      const a = cr.a - cr.s*j*0.15, wx = cr.cx + Math.cos(a)*cr.r, wy = cr.cy + Math.sin(a)*cr.r;
+      const ox = wx - pl.x, oy = wy - pl.y, depth = ox*fx + oy*fy; if (depth < 2) continue;
+      const col = Math.floor((W/2 + (ox*rx + oy*ry)/depth*focal)/CELLW), row = Math.floor((horizon + (camH - cr.h)*focal/depth)/CELLH);
+      const glowCell = (c, ch, r, g, b) => { if (c<0||c>=COLS||row<0||row>=ROWS) return; const i=row*COLS+c; if (depth >= zb[i]) return; setCell(i, ch, r, g, b, r*0.3, g*0.3, b*0.3); };
+      if (j === 0){ glowCell(col-1, '=', 0.95,0.95,1); glowCell(col, '#', cr.col[0],cr.col[1],cr.col[2]); glowCell(col+1, '=', 1,0.3,0.3); }
+      else { const f = 1 - j/7; glowCell(col, j<3?'=':'-', cr.col[0]*f, cr.col[1]*f, cr.col[2]*f); }
+    }
+  }
   // lighthouse beam sweeping the night sky
   if (LH && night > 0.4){
     const lp = put(LH.x, LH.y, LH.top - 2, '@', 1, save.opened ? 0.85 : 0.95, save.opened ? 0.25 : 0.55, 2, true);
@@ -381,7 +438,7 @@ function buildMap(){
   const im = mctx.createImageData(128,128);
   for (let y=0;y<128;y++) for (let x=0;x<128;x++){
     const i = idx(x*4, y*4), h = H[i], m = MAT[i], o = (y*128+x)*4;
-    let c = h < WATER ? [20, 60 + Math.max(0, 40 + h*4), 120 + Math.max(0, 30 + h*3)] : m===1 ? [220,200,140] : m===4 ? [130,130,140] : m===5||m===3 ? [40,110,50] : m===6||m===7 ? [230,60,60] : m===8||m===9 ? [150,100,60] : [90,170,70];
+    let c = h < WATER ? [20, 60 + Math.max(0, 40 + h*4), 120 + Math.max(0, 30 + h*3)] : m===1 ? [220,200,140] : m===4 ? [130,130,140] : m===5||m===3 ? [40,110,50] : m===6||m===7 ? [230,60,60] : m===8||m===9 ? [150,100,60] : m===10||m===12 ? [210,60,190] : m===11 ? [45,40,60] : [90,170,70];
     im.data[o]=c[0]; im.data[o+1]=c[1]; im.data[o+2]=c[2]; im.data[o+3]=255;
   }
   mapBase = im;
@@ -454,6 +511,7 @@ document.getElementById('start').addEventListener('pointerdown', e => { e.preven
 document.getElementById('bPhoto').onclick = () => { photoReq = true; };
 document.getElementById('bSound').onclick = toggleSound;
 document.getElementById('bTime').onclick = () => skipTime();
+document.getElementById('bRain').onclick = () => toggleRain();
 document.getElementById('bFire').onclick = useFire;
 const joy = { on:false, id:null, x:0, y:0, cx:0, cy:0 };
 let lookId = null, lookX = 0, lookY = 0;
@@ -473,7 +531,7 @@ tz.addEventListener('pointermove', e => {
     if (d > m){ dx *= m/d; dy *= m/d; }
     joy.x = dx/m; joy.y = dy/m; knob.style.transform = `translate(${dx}px,${dy}px)`;
   } else if (e.pointerId === lookId){
-    pl.yaw += (e.clientX - lookX)*0.006; pl.pitch = Math.max(-0.45, Math.min(0.55, pl.pitch + (e.clientY - lookY)*0.003));
+    pl.yaw += (e.clientX - lookX)*0.006; pl.pitch = Math.max(-0.45, Math.min(0.55, pl.pitch - (e.clientY - lookY)*0.003));
     lookX = e.clientX; lookY = e.clientY;
   }
 });
@@ -482,15 +540,18 @@ tz.addEventListener('pointerup', endTouch); tz.addEventListener('pointercancel',
 document.getElementById('bJump').addEventListener('pointerdown', e => { e.stopPropagation(); begin(); if (pl.onGround){ pl.vz = 9; pl.onGround = false; } });
 document.getElementById('bRun').addEventListener('pointerdown', e => { e.stopPropagation(); runOn = !runOn; e.currentTarget.classList.toggle('on', runOn); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
-if (location.hash === '#debug') window.__isl = { pl, SPOTS, CHEST, FIRE, save, setRain: v => { rainTarget = v; rain = v; }, skipTime, get dayT(){ return dayT; }, set dayT(v){ dayT = v; fastBlend = 3; }, groundAt };
+if (location.hash === '#debug') window.__isl = { DIST, pl, SPOTS, CHEST, FIRE, save, setRain: v => { rainTarget = v; rain = v; }, skipTime, get dayT(){ return dayT; }, set dayT(v){ dayT = v; fastBlend = 3; }, groundAt };
 
+// ================= flying cars over the neon district =================
+const cars = DIST ? Array.from({length:12}, ()=>({ cx: DIST.cx+(Math.random()-0.5)*20, cy: DIST.cy+(Math.random()-0.5)*20, r: 14+Math.random()*DIST.S, a: Math.random()*6.28,
+  h: DIST.flat + 16 + Math.random()*40, s: (Math.random()<0.5?-1:1)*(0.18+Math.random()*0.25), col: Math.random()<0.5 ? [0.25,1,1] : [1,0.3,0.85] })) : [];
 // ================= rendering (WebGL: every character drawn in one call) =================
 const cv = document.getElementById('c');
 const gl = cv.getContext('webgl', {antialias:false, alpha:false, preserveDrawingBuffer:false});
 const TOUCH = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
 if (TOUCH) document.body.classList.add('touch');
 const startEl = document.getElementById('start'), statsEl = document.getElementById('stats');
-const GLYPHS = " .,:;'`\"-_~=+*^!|/\\()<>[]{}ivxo%#&@$MWO";
+const GLYPHS = " .,:;'`\"-_~=+*^!|/\\()<>[]{}ivxo%#&@$MWOABCDEFGHIJKLNPQRSTUVXYZ0123456789";
 const GI = {}; [...GLYPHS].forEach((g,i)=>GI[g]=i);
 let COLS, ROWS, CWp, CHp, dpr, W, Hpx, fg, bg, ybuf, zb;
 let atlasTex, fgTex, bgTex, prog, uLoc = {};
@@ -580,7 +641,8 @@ function render(){
   const sunR = 26;
   const night = P.night, light = P.light*(1-0.35*rain), amb = P.amb;
   const gray = [0.42,0.45,0.5].map(v=>v*Math.max(0.25,P.light));
-  const hor = P.skyHor.map((v,j)=>lerp(v,gray[j],rain*0.6)), top = P.skyTop.map((v,j)=>lerp(v,gray[j]*0.8,rain*0.6)), sc = P.sunCol;
+  const NE = PRESETS[2], glowK = DIST ? night * clamp01(1.4 - Math.hypot(pl.x-DIST.cx, pl.y-DIST.cy)/(DIST.S*3)) : 0;
+  const hor = P.skyHor.map((v,j)=>lerp(lerp(v,NE.skyHor[j],glowK),gray[j],rain*0.6)), top = P.skyTop.map((v,j)=>lerp(lerp(v,NE.skyTop[j],glowK),gray[j]*0.8,rain*0.6)), sc = P.sunCol;
 
   for (let col=0; col<COLS; col++){
     const sx = (col+0.5)*CELLW;
@@ -603,7 +665,7 @@ function render(){
         const fog = Math.pow(clamp01((z-40)/(MAXD*0.75)), 1.15);
         for (let row=r0; row<yb; row++){
           const ci = row*COLS + col;
-          let ch, r,g,b, bgf = 0.42, wr=0, wg=0, wb=0;
+          let ch, r,g,b, bgf = 0.42, wr=0, wg=0, wb=0, emi=false;
           if (mat === 0){
             // water: animated waves, shallow = turquoise, deep = navy, sun glints
             const w = Math.sin(px*0.35 + t*1.3) + Math.sin(py*0.27 - t*0.9) + Math.sin((px+py)*0.13 + t*0.5);
@@ -631,16 +693,53 @@ function render(){
               const roof = wh > HUT.g + 5.2;
               ch = roof ? (hv>0.5?'/':'\\') : (Math.floor(wh)%2? '=' : '|');
               const c = roof ? [0.80,0.62,0.30] : L.c; r=c[0]*lum; g=c[1]*lum; b=c[2]*lum;
+            } else if (mat === 10 || mat === 12){
+              // neon towers + vertical signs
+              const B = BLDS[BID[i]], wh = camH - (row*CELLH + CELLH/2 - horizon)*z/focal, rel = wh - B.g, gl2 = 0.7 + 0.5*night;
+              if (mat === 12){
+                const li = Math.floor((B.signTop - wh)/2.2), on = !(B.blink && Math.sin(t*3 + B.id) > 0.8);
+                if (li >= 0 && li < B.word.length && on){ ch = B.word[li]; r=B.neon[0]*gl2; g=B.neon[1]*gl2; b=B.neon[2]*gl2; emi=true; bgf=0.3; }
+                else { ch='|'; r=0.22*lum; g=0.22*lum; b=0.28*lum; }
+              } else if (rel > B.h - 1.0){ ch='='; r=B.neon[0]*gl2; g=B.neon[1]*gl2; b=B.neon[2]*gl2; emi=true; bgf=0.3; }
+              else {
+                const u = Math.floor((px+py)*0.8), band = Math.floor(rel/1.7), fr = rel - band*1.7;
+                const fl2 = Math.max(lum, 0.7);
+                if (rel < 0.4 || fr > 1.15){ ch='-'; r=0.30*fl2; g=0.31*fl2; b=0.44*fl2; bgf=0.5; }
+                else {
+                  const hw = hash2(u*7 + B.id*131, band + B.id*17);
+                  if (hw > 0.6 - night*0.22){
+                    const pc = hw > 0.93 ? B.neon : (hash2(u, band*3 + B.id) > 0.5 ? [1,0.78,0.42] : [0.45,0.85,1]);
+                    const fl = hw > 0.985 ? (Math.sin(t*23 + u) > 0 ? 1 : 0.25) : 1, k2 = lerp(0.55,1.05,night)*fl;
+                    ch = hw > 0.8 ? '#' : ':'; r=pc[0]*k2; g=pc[1]*k2; b=pc[2]*k2; emi = night > 0.5; bgf = 0.25;
+                  } else { ch='.'; r=0.24*fl2; g=0.25*fl2; b=0.36*fl2; bgf=0.55; }
+                }
+              }
+            } else if (mat === 11){
+              // city streets: neon lane lines + puddle reflections at night
+              const D = DIST, lx2 = ((px-D.ox)%D.cell + D.cell)%D.cell, ly2 = ((py-D.oy)%D.cell + D.cell)%D.cell;
+              const nearX = Math.min(lx2, D.cell-lx2) < 0.3, nearY = Math.min(ly2, D.cell-ly2) < 0.3;
+              const dash = nearX ? Math.floor(py*0.7)%2===0 : nearY ? Math.floor(px*0.7)%2===0 : false;
+              const hv = HASH[i];
+              if (dash){ const c = nearX ? [0.2,0.95,1] : [1,0.3,0.8], k2 = 0.55 + 0.5*night; ch=':'; r=c[0]*k2; g=c[1]*k2; b=c[2]*k2; emi=true; bgf=0.25; }
+              else { ch = hv > 0.7 ? ',' : '.'; r=0.13*lum; g=0.13*lum; b=0.18*lum; bgf=0.5;
+                if (night > 0.5 && hv > 0.93){ const c = hv > 0.965 ? [1,0.3,0.8] : [0.2,0.9,1]; ch='~'; r=c[0]*0.5; g=c[1]*0.5; b=c[2]*0.5; } }
+            } else if (mat === 8){
+              const wh = camH - (row*CELLH + CELLH/2 - horizon)*z/focal;
+              const roof = wh > HUT.g + 5.2;
+              ch = roof ? (hv>0.5?'/':'\\') : (Math.floor(wh)%2? '=' : '|');
+              const c = roof ? [0.80,0.62,0.30] : L.c; r=c[0]*lum; g=c[1]*lum; b=c[2]*lum;
             } else {
               const rampPos = clamp01(lum*0.95 + (hv-0.5)*0.35);
               ch = L.ramp[Math.min(L.ramp.length-1, Math.floor(rampPos*L.ramp.length))];
               const v = 1 + tv*0.18;
               r = L.c[0]*lum*v; g = L.c[1]*lum*v; b = L.c[2]*lum*v;
               if (mat === 5 && row === r0 && z < 120) ch = '^';
+              if (mat === 9 && hv > 0.94){ const k2 = 0.6 + 0.5*night; ch='*'; r=0.2*k2; g=0.95*k2; b=1*k2; emi=true; bgf=0.3; }
             }
           }
           // fog towards the horizon colour
-          r = lerp(r, hor[0], fog); g = lerp(g, hor[1], fog); b = lerp(b, hor[2], fog);
+          const fk = emi ? fog*0.35 : fog;
+          r = lerp(r, hor[0], fk); g = lerp(g, hor[1], fk); b = lerp(b, hor[2], fk);
           zb[ci] = z;
           if (bgf < 0){ const fw=fog; setCell(ci, ch, r,g,b, lerp(wr*0.62,hor[0],fw), lerp(wg*0.62,hor[1],fw), lerp(wb*0.62,hor[2],fw)); }
           else setCell(ci, ch, r,g,b, r*bgf, g*bgf, b*bgf);
@@ -704,7 +803,7 @@ function render(){
 // ================= input: drag to look =================
 let dragging = false, lx = 0, ly = 0;
 cv.addEventListener('pointerdown', e => { if (TOUCH) return; dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); begin(); });
-cv.addEventListener('pointermove', e => { if (!dragging || TOUCH) return; pl.yaw += (e.clientX-lx)*0.0045; pl.pitch = Math.max(-0.45, Math.min(0.55, pl.pitch + (e.clientY-ly)*0.0025)); lx=e.clientX; ly=e.clientY; });
+cv.addEventListener('pointermove', e => { if (!dragging || TOUCH) return; pl.yaw += (e.clientX-lx)*0.0045; pl.pitch = Math.max(-0.45, Math.min(0.55, pl.pitch - (e.clientY-ly)*0.0025)); lx=e.clientX; ly=e.clientY; });
 cv.addEventListener('pointerup', () => dragging = false);
 cv.addEventListener('pointercancel', () => dragging = false);
 
@@ -727,13 +826,15 @@ function update(dt){
     const s = sp * mag * (inWater ? (swimming() ? 0.35 : 0.45) : 1) / len;
     const nx = pl.x + mx*s, ny = pl.y + my*s;
     const gN = groundAt(nx,ny), mat = MAT[idx(nx|0,ny|0)];
-    const blocked = mat===6 || mat===7 || mat===8 || gN - pl.z > 3.2 || heightAt(nx,ny) < WATER - 26 || nx<2||ny<2||nx>N-3||ny>N-3;
+    const solidNear = [[1.8,0],[-1.8,0],[0,1.8],[0,-1.8],[1.3,1.3],[-1.3,1.3],[1.3,-1.3],[-1.3,-1.3]].some(([ox,oy]) => { const m = MAT[idx((nx+ox)|0,(ny+oy)|0)]; return m===10 || m===12; });
+    const blocked = mat===6 || mat===7 || mat===8 || solidNear || gN - pl.z > 3.2 || heightAt(nx,ny) < WATER - 26 || nx<2||ny<2||nx>N-3||ny>N-3;
     if (!blocked){ pl.x = nx; pl.y = ny; }
   }
   const g = groundAt(pl.x,pl.y);
   pl.vz -= 24*dt; pl.z += pl.vz*dt;
   if (pl.z <= g){ pl.z = lerp(pl.z, g, Math.min(1, dt*14)); if (pl.z < g - 1) pl.z = g - 1; pl.vz = 0; pl.onGround = true; }
   for (const b of birds){ b.a += b.s*dt; }
+  for (const c of cars){ c.a += c.s*dt; }
   game(dt);
   if (stepTime(dt)){ relightT -= dt; if (relightT <= 0){ relight(...P.sun); relightT = 0.25; } }
 }
