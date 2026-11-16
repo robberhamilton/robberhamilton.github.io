@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ASCII Island">
+<meta name="theme-color" content="#000000">
 <title>ASCII Island</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -18,14 +22,51 @@
   #start { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
   #start div { background:rgba(0,0,0,.7); border:1px solid rgba(255,255,255,.2); border-radius:14px; padding:14px 20px; font-size:14px; }
   kbd { border:1px solid rgba(255,255,255,.3); border-radius:4px; padding:0 5px; font-family:inherit; }
+  html,body { touch-action:none; overscroll-behavior:none; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  #title { top:calc(14px + env(safe-area-inset-top)); }
+  #shells { top:calc(62px + env(safe-area-inset-top)); left:14px; font-weight:700; color:#ffc9a8; }
+  #map { position:fixed; inset:auto; left:auto; bottom:auto; top:calc(14px + env(safe-area-inset-top)); right:14px; width:118px; height:118px; border-radius:12px; border:1px solid rgba(255,255,255,.18); background:#000; image-rendering:pixelated; pointer-events:none; }
+  #stats { top:auto; bottom:52px; right:14px; }
+  #toast { position:fixed; top:28%; left:50%; transform:translate(-50%,-50%) scale(.9); font-size:15px; font-weight:700; background:rgba(0,0,0,.75); border:1px solid rgba(255,255,255,.2); border-radius:14px; padding:12px 18px; opacity:0; transition:opacity .3s, transform .3s; pointer-events:none; text-align:center; white-space:pre; }
+  #toast.on { opacity:1; transform:translate(-50%,-50%) scale(1); }
+  #touch { position:fixed; inset:0; display:none; }
+  #joy { position:fixed; width:120px; height:120px; border-radius:50%; border:2px solid rgba(255,255,255,.25); background:rgba(0,0,0,.2); display:none; pointer-events:none; }
+  #knob { position:absolute; left:35px; top:35px; width:50px; height:50px; border-radius:50%; background:rgba(255,255,255,.35); }
+  .tbtn { font:700 13px 'JetBrains Mono',monospace; color:#fff; background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.25); border-radius:999px; padding:0; cursor:pointer; }
+  #btns { position:fixed; right:calc(18px + env(safe-area-inset-right)); bottom:calc(22px + env(safe-area-inset-bottom)); display:none; gap:12px; align-items:flex-end; }
+  #bJump { width:76px; height:76px; } #bRun { width:58px; height:58px; } #bRun.on { background:rgba(198,255,0,.85); color:#000; }
+  #tools { position:fixed; right:14px; top:calc(140px + env(safe-area-inset-top)); display:flex; flex-direction:column; gap:8px; }
+  #tools .tbtn { width:40px; height:40px; font-size:16px; }
+  #bFire { position:fixed; left:50%; bottom:calc(120px + env(safe-area-inset-bottom)); transform:translateX(-50%); display:none; padding:12px 18px; background:rgba(255,140,40,.9); color:#000; border:0; }
+  #photo { position:fixed; inset:0; background:rgba(0,0,0,.9); display:none; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:20px; z-index:9; }
+  #photo img { max-width:100%; max-height:72vh; border-radius:12px; border:1px solid rgba(255,255,255,.2); -webkit-user-select:auto; user-select:auto; -webkit-touch-callout:default; }
+  #photo p { font-size:12px; opacity:.7; } #photo .row { display:flex; gap:10px; } #photo .tbtn { padding:10px 18px; }
+  #start { pointer-events:auto; background:rgba(0,0,0,.35); z-index:8; }
+  #start div { text-align:center; line-height:1.7; max-width:320px; }
+  #start b { font-size:26px; letter-spacing:.15em; display:block; margin-bottom:6px; }
+  body.touch #help, body.touch #stats { display:none; }
+  body.touch #touch, body.touch #btns { display:flex; }
+  body.touch #title { font-size:10px; padding:6px 10px; }
+  body.touch #title small { display:none; }
+  body.touch #shells { top:calc(46px + env(safe-area-inset-top)); }
+  body.touch #map { width:96px; height:96px; }
+  body.touch #tools { top:calc(118px + env(safe-area-inset-top)); }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div class="hud" id="title">ASCII ISLAND<small>every pixel here is a text character</small></div>
-<div class="hud" id="help"><kbd>W A S D</kbd> walk &nbsp; <kbd>drag</kbd> or <kbd>← →</kbd> look &nbsp; <kbd>Shift</kbd> run &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>T</kbd> time of day &nbsp; <kbd>C</kbd> colour / mono</div>
+<div class="hud" id="help"><kbd>W A S D</kbd> walk &nbsp; <kbd>drag</kbd> or <kbd>← →</kbd> look &nbsp; <kbd>Shift</kbd> run &nbsp; <kbd>Space</kbd> jump &nbsp; <kbd>E</kbd> use &nbsp; <kbd>T</kbd> skip time &nbsp; <kbd>C</kbd> colour &nbsp; <kbd>P</kbd> photo &nbsp; <kbd>M</kbd> sound</div>
+<div class="hud" id="shells">@ shells 0/10</div>
+<canvas id="map" width="128" height="128"></canvas>
+<div id="toast"></div>
+<div id="touch"><div id="joy"><div id="knob"></div></div></div>
+<div id="btns"><button class="tbtn" id="bRun">RUN</button><button class="tbtn" id="bJump">JUMP</button></div>
+<div id="tools"><button class="tbtn" id="bPhoto" title="Photo (P)">◉</button><button class="tbtn" id="bSound" title="Sound (M)">♪</button><button class="tbtn" id="bTime" title="Skip time (T)">☼</button></div>
+<button class="tbtn" id="bFire">sit by the fire · sleep till morning</button>
+<div id="photo"><img id="photoImg" alt="ASCII Island photo"><p id="photoTip">Press and hold the picture → Save to Photos</p><div class="row"><button class="tbtn" id="pShare">Share</button><button class="tbtn" id="pClose">Close</button></div></div>
 <div class="hud" id="stats"></div>
-<div id="start"><div>Click and drag to look around · <kbd>W</kbd> to walk</div></div>
+<div id="start"><div><b>ASCII ISLAND</b>Find the 10 hidden shells <span style="color:#ffc9a8">@</span>, then open the treasure by the lighthouse.<br><br><span id="startHow">Click to start · <kbd>W A S D</kbd> walk · drag to look</span></div></div>
 
 <script>
 (() => {
@@ -119,7 +160,7 @@ let tod = 0, P = JSON.parse(JSON.stringify(PRESETS[0]));
 relight(...P.sun);
 const lerp=(a,b,t)=>a+(b-a)*t;
 function stepTime(dt){
-  const T = PRESETS[tod]; const k = Math.min(1, dt*1.5); let changed=false;
+  const T = PRESETS[tod]; const k = Math.min(1, dt*(fastBlend>0?2.5:0.35)); if (fastBlend>0) fastBlend -= dt; let changed=false;
   for (const key of ['sun','skyTop','skyHor','sunCol']) for (let j=0;j<3;j++){ const v=lerp(P[key][j],T[key][j],k); if (Math.abs(v-P[key][j])>1e-4) changed=true; P[key][j]=v; }
   for (const key of ['amb','light','night']) P[key]=lerp(P[key],T[key],k);
   return changed;
@@ -140,11 +181,14 @@ pl.z = groundAt(pl.x,pl.y);
 const EYE = 2.4;
 const keys = {};
 addEventListener('keydown', e => { keys[e.code]=true;
-  if (e.code==='KeyT'){ tod=(tod+1)%PRESETS.length; }
+  if (e.code==='KeyT'){ skipTime(); }
+  if (e.code==='KeyP'){ photoReq = true; }
+  if (e.code==='KeyM'){ toggleSound(); }
+  if (e.code==='KeyE'){ useFire(); }
   if (e.code==='KeyC'){ mono=!mono; }
   if (e.code==='Space' && pl.onGround){ pl.vz = 9; pl.onGround=false; }
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
-  startEl.style.display='none';
+  begin();
 });
 addEventListener('keyup', e => keys[e.code]=false);
 let mono = false;
@@ -152,13 +196,303 @@ let mono = false;
 // ================= birds =================
 const birds = Array.from({length:7}, (_,i)=>({ r: 60+Math.random()*90, a: Math.random()*6.28, h: 38+Math.random()*25, s: 0.08+Math.random()*0.08, cx: C+(Math.random()-0.5)*60, cy: C+(Math.random()-0.5)*60, f: Math.random()*6 }));
 
+
+// ================= v2: game layer (shells, treasure, wildlife, weather, sound, controls, map) =================
+const SAVE_KEY = 'ascii-island-v2';
+let save = { found: [], opened: false, seen: '', dayT: 0.08 };
+try { const sv = JSON.parse(localStorage.getItem(SAVE_KEY)); if (sv) save = Object.assign(save, sv); } catch(e) {}
+const SEEN = new Uint8Array(64*64); for (let i=0;i<save.seen.length && i<4096;i++) SEEN[i] = save.seen.charCodeAt(i)===49 ? 1 : 0;
+function persist(){ save.seen = Array.from(SEEN, v=>v?'1':'0').join(''); save.dayT = dayT; try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch(e) {} }
+let persistT = 0;
+
+// day/night: one full day every 8 minutes (day → sunset → night → dawn)
+let dayT = save.dayT || 0.08, fastBlend = 0;
+const DAY_LEN = 480;
+function phaseOf(d){ return d < 0.46 ? 0 : d < 0.55 ? 1 : d < 0.90 ? 2 : 1; }
+function dayCycle(dt){ dayT = (dayT + dt/DAY_LEN) % 1; tod = phaseOf(dayT); }
+function skipTime(){ const marks = [0.0, 0.46, 0.55, 0.90]; const nxt = marks.find(m => m > dayT + 0.001); dayT = nxt === undefined ? 0 : nxt; fastBlend = 2.5; tod = phaseOf(dayT); }
+tod = phaseOf(dayT); P = JSON.parse(JSON.stringify(PRESETS[tod])); relight(...P.sun);
+
+// weather: a shower every few minutes
+let rain = 0, rainTarget = 0, rainTimer = 90 + Math.random()*90;
+const drops = Array.from({length: 260}, () => ({ x: Math.random(), y: Math.random(), v: 0.9 + Math.random()*0.8 }));
+
+// shells: 10 hand-picked kinds of spot, chosen deterministically from the map
+const SPOTS = [];
+{
+  let sd = 4242; const r2 = () => (sd = (sd*16807) % 2147483647) / 2147483647;
+  const far = (x,y,d) => SPOTS.every(s => Math.hypot(s.x-x, s.y-y) > d);
+  const pick = (test, n, d=45) => { let tries = 0; while (n > 0 && tries++ < 20000){ const x = 12 + r2()*(N-24), y = 12 + r2()*(N-24), i = idx(x|0,y|0);
+    if (test(i, x, y) && far(x,y,d)){ SPOTS.push({x, y, kind: ''}); n--; } } };
+  pick(i => MAT[i]===1 && H[i] > 0.4 && H[i] < 2.2, 4);                         // beaches
+  pick(i => MAT[i]===3 && H[i] > 3 && H[i] < 22, 2);                            // deep in the forest
+  pick(i => MAT[i]===4 && H[i] > 18, 1, 30);                                    // up on the rocks
+  pick(i => MAT[i]===2 && H[i] > 3, 1);                                         // a meadow
+  if (HUT) SPOTS.push({ x: HUT.x + Math.cos(HUT.a)*31, y: HUT.y + Math.sin(HUT.a)*31 }); // end of the dock
+  while (SPOTS.length < 10) pick(i => (MAT[i]===1||MAT[i]===2) && H[i] > 0.5, 1, 25);
+  SPOTS.length = 10;
+  SPOTS.forEach((s, k) => { s.id = k; s.found = save.found.includes(k); });
+}
+const CHEST = LH ? { x: LH.x + (C-LH.x)/Math.hypot(C-LH.x,C-LH.y)*9, y: LH.y + (C-LH.y)/Math.hypot(C-LH.x,C-LH.y)*9 } : { x: C, y: C };
+const FIRE = HUT ? { x: HUT.x + Math.cos(HUT.a + Math.PI/2)*8, y: HUT.y + Math.sin(HUT.a + Math.PI/2)*8 } : null;
+
+// wildlife
+const crabs = [];
+{ let sd = 77; const r3 = () => (sd = (sd*16807) % 2147483647) / 2147483647;
+  for (let k=0; k<4000 && crabs.length<9; k++){ const x = 10 + r3()*(N-20), y = 10 + r3()*(N-20), i = idx(x|0,y|0);
+    if (MAT[i]===1 && H[i] > 0.3 && H[i] < 1.6 && crabs.every(c => Math.hypot(c.x-x,c.y-y) > 30)) crabs.push({ x, y, hx: x, hy: y, ph: r3()*6, run: 0 }); } }
+const fish = HUT ? Array.from({length: 5}, (_,k) => ({ x: HUT.x + Math.cos(HUT.a)*(22+k*7) + (k%2?6:-6), y: HUT.y + Math.sin(HUT.a)*(22+k*7), t: Math.random()*6, cycle: 5 + Math.random()*6 })) : [];
+const flies = [];
+{ let sd = 991; const r4 = () => (sd = (sd*16807) % 2147483647) / 2147483647;
+  for (let k=0; k<6000 && flies.length<160; k++){ const x = 8 + r4()*(N-16), y = 8 + r4()*(N-16), i = idx(x|0,y|0);
+    if ((MAT[i]===3 || MAT[i]===2) && H[i] > 2) flies.push({ x, y, ph: r4()*6.28, h: 1 + r4()*2.5 }); } }
+
+// ----- toast + counters -----
+const toastEl = document.getElementById('toast'); let toastT = null;
+function toast(msg, ms = 2200){ toastEl.textContent = msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), ms); }
+function updShells(){ const n = SPOTS.filter(s => s.found).length; document.getElementById('shells').textContent = `@ shells ${n}/10` + (save.opened ? '  ★ treasure' : n === 10 ? '  → lighthouse!' : ''); }
+
+// ----- the game tick -----
+function game(dt){
+  // shells
+  for (const s of SPOTS){
+    if (s.found) continue;
+    if (Math.hypot(s.x - pl.x, s.y - pl.y) < 2.8 && Math.abs(groundAt(s.x,s.y) - pl.z) < 4){
+      s.found = true; save.found.push(s.id); persist(); updShells(); sfx.chime();
+      const n = SPOTS.filter(q => q.found).length;
+      toast(n === 10 ? 'All 10 shells!\nThe treasure by the lighthouse is open…' : `shell found  ${n}/10`, n === 10 ? 3800 : 1800);
+    }
+  }
+  // treasure
+  if (!save.opened && SPOTS.every(s => s.found) && Math.hypot(CHEST.x - pl.x, CHEST.y - pl.y) < 4){
+    save.opened = true; persist(); updShells(); sfx.fanfare();
+    toast('★ TREASURE ★\nthe lighthouse now shines gold.\nthanks for exploring!', 5000);
+  }
+  // campfire
+  const nearFire = FIRE && Math.hypot(FIRE.x - pl.x, FIRE.y - pl.y) < 7 && P.night > 0.5;
+  document.getElementById('bFire').style.display = nearFire ? 'block' : 'none';
+  // crabs scuttle away from you, then wander home
+  for (const c of crabs){
+    const d = Math.hypot(c.x - pl.x, c.y - pl.y);
+    if (d < 7){ const ax = (c.x - pl.x)/d, ay = (c.y - pl.y)/d; const nx = c.x + ax*dt*9, ny = c.y + ay*dt*9; if (H[idx(nx|0,ny|0)] > 0) { c.x = nx; c.y = ny; } c.run = 0.4; }
+    else { c.run = Math.max(0, c.run - dt); c.x += (c.hx - c.x)*dt*0.2 + Math.sin(t*2 + c.ph)*dt*0.6; c.y += (c.hy - c.y)*dt*0.2; }
+  }
+  // weather
+  rainTimer -= dt;
+  if (rainTimer <= 0){ if (rainTarget > 0){ rainTarget = 0; rainTimer = 150 + Math.random()*180; } else { rainTarget = 1; rainTimer = 35 + Math.random()*35; toast('it’s starting to rain…', 1800); } }
+  rain += (rainTarget - rain) * Math.min(1, dt*0.4);
+  for (const d of drops){ d.y += d.v*dt*1.6; d.x -= d.v*dt*0.25; if (d.y > 1){ d.y = -0.05; d.x = Math.random()*1.2; } }
+  // explored map
+  const mx = (pl.x/8)|0, my = (pl.y/8)|0;
+  for (let y=my-4;y<=my+4;y++) for (let x=mx-4;x<=mx+4;x++) if (x>=0&&y>=0&&x<64&&y<64 && (x-mx)**2+(y-my)**2 <= 17) SEEN[y*64+x] = 1;
+  persistT -= dt; if (persistT <= 0){ persistT = 5; persist(); }
+  sfx.update(dt);
+}
+function useFire(){
+  if (!(FIRE && Math.hypot(FIRE.x - pl.x, FIRE.y - pl.y) < 7 && P.night > 0.5)) return;
+  dayT = 0.91; fastBlend = 3; tod = phaseOf(dayT); toast('you rest by the fire…\ngood morning ☼', 2600);
+}
+const swimming = () => heightAt(pl.x, pl.y) < WATER - 2.2;
+
+// ----- drawing extras (sprites with a depth test, beam, rain, splash) -----
+function drawExtras(fx,fy,rx,ry,focal,horizon,camH,night){
+  const put = (wx,wy,wz,ch,r,g,b, minD=0.6, nd=false) => {
+    const ox = wx - pl.x, oy = wy - pl.y, depth = ox*fx + oy*fy;
+    if (depth < minD) return null;
+    const lat = ox*rx + oy*ry;
+    const col = Math.floor((W/2 + lat/depth*focal)/CELLW), row = Math.floor((horizon + (camH - wz)*focal/depth)/CELLH);
+    if (col<0||col>=COLS||row<0||row>=ROWS) return null;
+    const i = row*COLS+col; if (!nd && depth > zb[i] + 0.6) return null;
+    const o = i*4; setCell(i, ch, r,g,b, bg[o]/255, bg[o+1]/255, bg[o+2]/255); return { col, row, depth };
+  };
+  const lit = Math.max(0.55, P.light);
+  // shells: bob + sparkle so you can spot them from a distance
+  for (const s of SPOTS){
+    if (s.found) continue;
+    const d = Math.hypot(s.x-pl.x, s.y-pl.y); if (d > 160) continue;
+    const gz = groundAt(s.x,s.y) + 0.7 + Math.sin(t*2 + s.id)*0.25;
+    const sp = (Math.sin(t*5 + s.id*2) > 0.6);
+    put(s.x, s.y, gz, d < 40 ? '@' : (sp ? '*' : '.'), 1.0, 0.72*lit+0.2, 0.62*lit+0.2);
+    if (sp && d < 40) put(s.x, s.y, gz + 1.4, '*', 1, 1, 0.8);
+  }
+  // treasure chest
+  { const all = SPOTS.every(s=>s.found), gz = groundAt(CHEST.x, CHEST.y) + 0.8;
+    put(CHEST.x, CHEST.y, gz, save.opened ? '$' : '#', save.opened ? 1 : 0.62*lit, save.opened ? 0.85 : 0.42*lit, save.opened ? 0.2 : 0.2*lit);
+    if (all && !save.opened && Math.sin(t*6) > 0) put(CHEST.x, CHEST.y, gz + 1.5, '!', 1, 0.9, 0.3); }
+  // campfire
+  if (FIRE){ const gz = groundAt(FIRE.x, FIRE.y);
+    put(FIRE.x, FIRE.y, gz + 0.4, '=', 0.45*lit, 0.3*lit, 0.18*lit);
+    const fl = Math.sin(t*13) + Math.sin(t*7.3);
+    put(FIRE.x, FIRE.y, gz + 1.2 + fl*0.1, fl > 0 ? '^' : '*', 1, 0.55 + fl*0.12, 0.15);
+    if (night > 0.3) put(FIRE.x, FIRE.y, gz + 2.2 + Math.sin(t*3)*0.4, '.', 1, 0.7, 0.3); }
+  // crabs
+  for (const c of crabs){ if (Math.hypot(c.x-pl.x,c.y-pl.y) > 90) continue;
+    put(c.x, c.y, groundAt(c.x,c.y) + 0.35, c.run > 0 ? (Math.sin(t*30) > 0 ? '<' : '>') : 'x', 0.95*lit, 0.35*lit, 0.25*lit); }
+  // fish jumping near the dock
+  for (const f of fish){
+    const ph = (t + f.t) % f.cycle; if (ph > 1.1) continue;
+    const arc = Math.sin(ph/1.1*Math.PI) * 2.6, ox = Math.cos(HUT.a + 1.2)*ph*2.2, oy = Math.sin(HUT.a + 1.2)*ph*2.2;
+    put(f.x + ox, f.y + oy, WATER + arc, ph < 0.55 ? '>' : 'o', 0.75*lit+0.1, 0.85*lit+0.1, 0.95*lit+0.1);
+    if (ph < 0.12 || ph > 0.98) put(f.x + ox, f.y + oy, WATER + 0.2, '~', 1, 1, 1);
+  }
+  // fireflies at night
+  if (night > 0.45) for (const fl of flies){
+    const dx = fl.x - pl.x, dy = fl.y - pl.y; if (dx*dx + dy*dy > 2500) continue;
+    const on = Math.sin(t*2.3 + fl.ph) > 0.35; if (!on) continue;
+    put(fl.x + Math.sin(t*0.7 + fl.ph)*1.5, fl.y + Math.cos(t*0.6 + fl.ph)*1.5, groundAt(fl.x,fl.y) + fl.h + Math.sin(t + fl.ph)*0.4, Math.sin(t*9 + fl.ph) > 0 ? '*' : '.', 0.85, 1, 0.35);
+  }
+  // lighthouse beam sweeping the night sky
+  if (LH && night > 0.4){
+    const lp = put(LH.x, LH.y, LH.top - 2, '@', 1, save.opened ? 0.85 : 0.95, save.opened ? 0.25 : 0.55, 2, true);
+    if (lp){
+      const sweep = Math.cos(t*0.9 - Math.atan2(pl.y - LH.y, pl.x - LH.x));   // 1 = pointing at you
+      const dirX = Math.sin(t*0.9) >= 0 ? 1 : -1, len = (1 - Math.abs(sweep)) * COLS * 0.5 + 3;
+      const gold = save.opened;
+      for (let k = 1; k < len; k++){
+        const col = Math.round(lp.col + dirX*k), row = Math.round(lp.row - k*0.12);
+        if (col<0||col>=COLS||row<0||row>=ROWS) break;
+        const i = row*COLS + col; if (zb[i] < 1e8) continue;
+        const a = (1 - k/len) * night, o = i*4;
+        setCell(i, k%3 ? '-' : '=', gold?1:0.95, gold?0.82:0.95, gold?0.3:0.7*a+0.2, bg[o]/255 + a*0.12, bg[o+1]/255 + a*0.11, bg[o+2]/255 + a*0.06);
+      }
+      if (sweep > 0.93){ for (let i=0;i<COLS*ROWS;i+=1){ if (zb[i] > 1e8){ const o=i*4; bg[o]=Math.min(255,bg[o]+18); bg[o+1]=Math.min(255,bg[o+1]+16); bg[o+2]=Math.min(255,bg[o+2]+8); } } }
+    }
+  }
+  // rain
+  if (rain > 0.03){
+    const n = Math.floor(drops.length * rain);
+    for (let k=0;k<n;k++){ const d = drops[k], col = Math.floor(d.x*COLS), row = Math.floor(d.y*ROWS);
+      if (col<0||col>=COLS||row<0||row>=ROWS) continue; const i=row*COLS+col, o=i*4;
+      setCell(i, '/', 0.62, 0.72, 0.88, bg[o]/255, bg[o+1]/255, bg[o+2]/255); }
+  }
+  // splashes while you swim / wade
+  const wading = heightAt(pl.x,pl.y) < WATER - 0.6;
+  if (wading && (joy.on || keys.KeyW || keys.KeyS || keys.KeyA || keys.KeyD)){
+    const base = ROWS - 1;
+    for (let k=0;k<6;k++){ const col = Math.floor(COLS/2 + Math.sin(t*9 + k*1.7)*COLS*0.22), row = base - (k%3);
+      if (col<0||col>=COLS) continue; const i=row*COLS+col, o=i*4; setCell(i, k%2 ? '~' : '.', 0.95,0.97,1, bg[o]/255,bg[o+1]/255,bg[o+2]/255); }
+  }
+}
+
+// ----- minimap with fog of war -----
+const mapCv = document.getElementById('map'), mctx = mapCv.getContext('2d');
+let mapBase = null;
+function buildMap(){
+  const im = mctx.createImageData(128,128);
+  for (let y=0;y<128;y++) for (let x=0;x<128;x++){
+    const i = idx(x*4, y*4), h = H[i], m = MAT[i], o = (y*128+x)*4;
+    let c = h < WATER ? [20, 60 + Math.max(0, 40 + h*4), 120 + Math.max(0, 30 + h*3)] : m===1 ? [220,200,140] : m===4 ? [130,130,140] : m===5||m===3 ? [40,110,50] : m===6||m===7 ? [230,60,60] : m===8||m===9 ? [150,100,60] : [90,170,70];
+    im.data[o]=c[0]; im.data[o+1]=c[1]; im.data[o+2]=c[2]; im.data[o+3]=255;
+  }
+  mapBase = im;
+}
+function drawMap(){
+  if (!mapBase) return;
+  const im = new ImageData(new Uint8ClampedArray(mapBase.data), 128, 128);
+  for (let y=0;y<128;y++) for (let x=0;x<128;x++) if (!SEEN[(y>>1)*64+(x>>1)]){ const o=(y*128+x)*4; im.data[o]=im.data[o+1]=im.data[o+2]=6; }
+  mctx.putImageData(im, 0, 0);
+  for (const s of SPOTS) if (s.found){ mctx.fillStyle = '#ffc9a8'; mctx.fillRect(s.x/4-1, s.y/4-1, 3, 3); }
+  if (SPOTS.every(s=>s.found)){ mctx.fillStyle = save.opened ? '#ffd23f' : (Math.sin(t*6)>0 ? '#ffd23f' : '#000'); mctx.fillRect(CHEST.x/4-2, CHEST.y/4-2, 4, 4); }
+  const px = pl.x/4, py = pl.y/4;
+  mctx.fillStyle = '#fff'; mctx.beginPath(); mctx.moveTo(px + Math.cos(pl.yaw)*6, py + Math.sin(pl.yaw)*6);
+  mctx.lineTo(px + Math.cos(pl.yaw+2.5)*4, py + Math.sin(pl.yaw+2.5)*4); mctx.lineTo(px + Math.cos(pl.yaw-2.5)*4, py + Math.sin(pl.yaw-2.5)*4); mctx.fill();
+}
+
+// ----- sound: all generated, no files -----
+const sfx = (() => {
+  let ac = null, on = false, master, waves, wavesG, rainG, crick, crickG, chirpT = 3;
+  function noiseBuf(){ const b = ac.createBuffer(1, ac.sampleRate*2, ac.sampleRate), d = b.getChannelData(0); let l = 0; for (let i=0;i<d.length;i++){ l = (l + 0.02*(Math.random()*2-1))/1.02; d[i] = l*3.5; } return b; }
+  function whiteBuf(){ const b = ac.createBuffer(1, ac.sampleRate*2, ac.sampleRate), d = b.getChannelData(0); for (let i=0;i<d.length;i++) d[i] = Math.random()*2-1; return b; }
+  function start(){
+    if (ac) { ac.resume(); on = true; master.gain.value = 0.9; return; }
+    try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return; }
+    master = ac.createGain(); master.gain.value = 0.9; master.connect(ac.destination);
+    const w = ac.createBufferSource(); w.buffer = noiseBuf(); w.loop = true; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+    wavesG = ac.createGain(); wavesG.gain.value = 0; w.connect(lp).connect(wavesG).connect(master); w.start();
+    const r = ac.createBufferSource(); r.buffer = whiteBuf(); r.loop = true; const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500;
+    rainG = ac.createGain(); rainG.gain.value = 0; r.connect(hp).connect(rainG).connect(master); r.start();
+    crick = ac.createOscillator(); crick.frequency.value = 4300; crickG = ac.createGain(); crickG.gain.value = 0; crick.connect(crickG).connect(master); crick.start();
+    on = true;
+  }
+  function blip(f0, f1, d, v, type='sine', delay=0){ if (!ac || !on) return; const o = ac.createOscillator(), g = ac.createGain(), t0 = ac.currentTime + delay;
+    o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + d); g.gain.setValueAtTime(v, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    o.connect(g).connect(master); o.start(t0); o.stop(t0 + d + 0.02); }
+  function update(dt){
+    if (!ac || !on) return;
+    // how much sea is around you
+    let wet = 0; for (let k=0;k<8;k++){ const a = k*Math.PI/4; if (heightAt(pl.x + Math.cos(a)*14, pl.y + Math.sin(a)*14) < WATER) wet++; }
+    const swell = 0.55 + 0.45*Math.sin(t*0.55);
+    wavesG.gain.value += ((wet/8)*0.32*swell + 0.02 - wavesG.gain.value) * Math.min(1, dt*3);
+    rainG.gain.value += (rain*0.10 - rainG.gain.value) * Math.min(1, dt*2);
+    const cr = P.night > 0.5 && rain < 0.3 ? (Math.sin(t*38) > 0.6 && Math.sin(t*1.7) > -0.2 ? 0.012 : 0) : 0;
+    crickG.gain.value = cr;
+    chirpT -= dt;
+    if (chirpT <= 0){ chirpT = 2 + Math.random()*5; if (P.night < 0.4 && rain < 0.3 && wet < 7){ const f = 2200 + Math.random()*1800; blip(f, f*1.4, 0.07, 0.03); blip(f*1.2, f*0.9, 0.06, 0.025, 'sine', 0.1); } }
+  }
+  return { start, update, toggle(){ if (!ac) { start(); return true; } on = !on; master.gain.value = on ? 0.9 : 0; return on; },
+    chime(){ blip(880, 1760, 0.18, 0.08, 'triangle'); blip(1320, 2640, 0.22, 0.06, 'triangle', 0.09); },
+    fanfare(){ [523,659,784,1047].forEach((f,i) => blip(f, f, 0.35, 0.08, 'triangle', i*0.14)); }, get on(){ return on; } };
+})();
+function toggleSound(){ const o = sfx.toggle(); document.getElementById('bSound').textContent = o ? '♪' : '×'; toast(o ? 'sound on' : 'sound off', 900); }
+
+// ----- photo mode -----
+let photoReq = false, photoBlob = null;
+function takePhoto(){
+  const url = cv.toDataURL('image/png');
+  const img = document.getElementById('photoImg'); img.src = url;
+  fetch(url).then(r => r.blob()).then(b => photoBlob = b).catch(()=>{});
+  document.getElementById('photo').style.display = 'flex';
+}
+document.getElementById('pClose').onclick = () => document.getElementById('photo').style.display = 'none';
+document.getElementById('pShare').onclick = async () => { if (!photoBlob) return; const f = new File([photoBlob], 'ascii-island.png', {type:'image/png'});
+  try { if (navigator.canShare && navigator.canShare({files:[f]})) await navigator.share({files:[f], title:'ASCII Island'}); } catch(e) {} };
+
+// ----- start, buttons, touch controls -----
+let started = false, runOn = false;
+function begin(){ if (started) return; started = true; document.getElementById('start').style.display = 'none'; sfx.start(); }
+document.getElementById('start').addEventListener('pointerdown', e => { e.preventDefault(); begin(); });
+document.getElementById('bPhoto').onclick = () => { photoReq = true; };
+document.getElementById('bSound').onclick = toggleSound;
+document.getElementById('bTime').onclick = () => skipTime();
+document.getElementById('bFire').onclick = useFire;
+const joy = { on:false, id:null, x:0, y:0, cx:0, cy:0 };
+let lookId = null, lookX = 0, lookY = 0;
+const joyEl = document.getElementById('joy'), knob = document.getElementById('knob');
+const tz = document.getElementById('touch');
+tz.addEventListener('pointerdown', e => {
+  begin();
+  if (e.clientX < innerWidth*0.45 && joy.id === null){
+    joy.id = e.pointerId; joy.on = true; joy.cx = e.clientX; joy.cy = e.clientY; joy.x = joy.y = 0;
+    joyEl.style.display = 'block'; joyEl.style.left = (e.clientX-60)+'px'; joyEl.style.top = (e.clientY-60)+'px'; knob.style.transform = '';
+  } else if (lookId === null){ lookId = e.pointerId; lookX = e.clientX; lookY = e.clientY; }
+  tz.setPointerCapture(e.pointerId);
+});
+tz.addEventListener('pointermove', e => {
+  if (e.pointerId === joy.id){
+    let dx = e.clientX - joy.cx, dy = e.clientY - joy.cy; const d = Math.hypot(dx,dy), m = 50;
+    if (d > m){ dx *= m/d; dy *= m/d; }
+    joy.x = dx/m; joy.y = dy/m; knob.style.transform = `translate(${dx}px,${dy}px)`;
+  } else if (e.pointerId === lookId){
+    pl.yaw += (e.clientX - lookX)*0.006; pl.pitch = Math.max(-0.45, Math.min(0.55, pl.pitch + (e.clientY - lookY)*0.003));
+    lookX = e.clientX; lookY = e.clientY;
+  }
+});
+const endTouch = e => { if (e.pointerId === joy.id){ joy.id = null; joy.on = false; joy.x = joy.y = 0; joyEl.style.display = 'none'; } if (e.pointerId === lookId) lookId = null; };
+tz.addEventListener('pointerup', endTouch); tz.addEventListener('pointercancel', endTouch);
+document.getElementById('bJump').addEventListener('pointerdown', e => { e.stopPropagation(); begin(); if (pl.onGround){ pl.vz = 9; pl.onGround = false; } });
+document.getElementById('bRun').addEventListener('pointerdown', e => { e.stopPropagation(); runOn = !runOn; e.currentTarget.classList.toggle('on', runOn); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
+if (location.hash === '#debug') window.__isl = { pl, SPOTS, CHEST, FIRE, save, setRain: v => { rainTarget = v; rain = v; }, skipTime, get dayT(){ return dayT; }, set dayT(v){ dayT = v; fastBlend = 3; }, groundAt };
+
 // ================= rendering (WebGL: every character drawn in one call) =================
 const cv = document.getElementById('c');
-const gl = cv.getContext('webgl', {antialias:false, alpha:false});
+const gl = cv.getContext('webgl', {antialias:false, alpha:false, preserveDrawingBuffer:false});
+const TOUCH = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
+if (TOUCH) document.body.classList.add('touch');
 const startEl = document.getElementById('start'), statsEl = document.getElementById('stats');
 const GLYPHS = " .,:;'`\"-_~=+*^!|/\\()<>[]{}ivxo%#&@$MWO";
 const GI = {}; [...GLYPHS].forEach((g,i)=>GI[g]=i);
-let COLS, ROWS, CWp, CHp, dpr, W, Hpx, fg, bg, ybuf;
+let COLS, ROWS, CWp, CHp, dpr, W, Hpx, fg, bg, ybuf, zb;
 let atlasTex, fgTex, bgTex, prog, uLoc = {};
 
 function shader(type, src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s); return s; }
@@ -188,7 +522,7 @@ const AG = 16;
 function layout(){
   dpr = Math.min(2, window.devicePixelRatio||1);
   W = innerWidth; Hpx = innerHeight;
-  const fs = W < 700 ? 10 : (W > 1700 ? 14 : 12);
+  const fs = TOUCH ? (W < 500 ? 9 : 10) : W < 700 ? 10 : (W > 1700 ? 14 : 12);
   const m = document.createElement('canvas').getContext('2d'); m.font = `500 ${fs}px 'JetBrains Mono', monospace`;
   const cw = m.measureText('M').width, ch = Math.round(fs*1.25);
   COLS = Math.floor(W/cw); ROWS = Math.floor(Hpx/ch);
@@ -206,7 +540,7 @@ function layout(){
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlasTex);
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,ac);
   gl.uniform2f(uLoc.grid, COLS, ROWS); gl.uniform2f(uLoc.agrid, AG, arows);
-  fg = new Uint8Array(COLS*ROWS*4); bg = new Uint8Array(COLS*ROWS*4); ybuf = new Float32Array(COLS);
+  fg = new Uint8Array(COLS*ROWS*4); bg = new Uint8Array(COLS*ROWS*4); ybuf = new Float32Array(COLS); zb = new Float32Array(COLS*ROWS);
   CELLW = cw; CELLH = ch;
 }
 let CELLW, CELLH;
@@ -244,8 +578,9 @@ function render(){
   const sunX = Math.abs(dYaw) < 1.4 ? W/2 + Math.tan(dYaw)*focal : -1e4;
   const sunY = horizon - Math.tan(sunEl)*focal;
   const sunR = 26;
-  const night = P.night, light = P.light, amb = P.amb;
-  const hor = P.skyHor, top = P.skyTop, sc = P.sunCol;
+  const night = P.night, light = P.light*(1-0.35*rain), amb = P.amb;
+  const gray = [0.42,0.45,0.5].map(v=>v*Math.max(0.25,P.light));
+  const hor = P.skyHor.map((v,j)=>lerp(v,gray[j],rain*0.6)), top = P.skyTop.map((v,j)=>lerp(v,gray[j]*0.8,rain*0.6)), sc = P.sunCol;
 
   for (let col=0; col<COLS; col++){
     const sx = (col+0.5)*CELLW;
@@ -306,6 +641,7 @@ function render(){
           }
           // fog towards the horizon colour
           r = lerp(r, hor[0], fog); g = lerp(g, hor[1], fog); b = lerp(b, hor[2], fog);
+          zb[ci] = z;
           if (bgf < 0){ const fw=fog; setCell(ci, ch, r,g,b, lerp(wr*0.62,hor[0],fw), lerp(wg*0.62,hor[1],fw), lerp(wb*0.62,hor[2],fw)); }
           else setCell(ci, ch, r,g,b, r*bgf, g*bgf, b*bgf);
         }
@@ -338,6 +674,7 @@ function render(){
         if (ds < sunR){ ch = ds < sunR*0.6 ? '@' : 'O'; fr=1; fgc=lerp(0.95,1,night); fb=lerp(0.7,1,night); }
         else if (ds < sunR*1.5 && ch===' '){ ch='.'; fr=sc[0]; fgc=sc[1]; fb=sc[2]; }
       }
+      zb[row*COLS+col] = 1e9;
       setCell(row*COLS+col, ch, fr,fgc,fb, r,g,b);
     }
   }
@@ -357,6 +694,7 @@ function render(){
     if (flap){ setCell(i, 'v', c,c,c, bg[o]/255,bg[o+1]/255,bg[o+2]/255); }
     else { setCell(i, '-', c,c,c, bg[o]/255,bg[o+1]/255,bg[o+2]/255); if (col+1<COLS && row<ybuf[col+1]){ const o2=(i+1)*4; setCell(i+1,'-',c,c,c,bg[o2]/255,bg[o2+1]/255,bg[o2+2]/255);} }
   }
+  drawExtras(fx,fy,rx,ry,focal,horizon,camH,night);
   // crosshair-free: upload and draw everything in one call
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, fgTex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,COLS,ROWS,0,gl.RGBA,gl.UNSIGNED_BYTE,fg);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, bgTex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,COLS,ROWS,0,gl.RGBA,gl.UNSIGNED_BYTE,bg);
@@ -365,8 +703,8 @@ function render(){
 
 // ================= input: drag to look =================
 let dragging = false, lx = 0, ly = 0;
-cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); startEl.style.display='none'; });
-cv.addEventListener('pointermove', e => { if (!dragging) return; pl.yaw += (e.clientX-lx)*0.0045; pl.pitch = Math.max(-0.45, Math.min(0.55, pl.pitch + (e.clientY-ly)*0.0025)); lx=e.clientX; ly=e.clientY; });
+cv.addEventListener('pointerdown', e => { if (TOUCH) return; dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); begin(); });
+cv.addEventListener('pointermove', e => { if (!dragging || TOUCH) return; pl.yaw += (e.clientX-lx)*0.0045; pl.pitch = Math.max(-0.45, Math.min(0.55, pl.pitch + (e.clientY-ly)*0.0025)); lx=e.clientX; ly=e.clientY; });
 cv.addEventListener('pointerup', () => dragging = false);
 cv.addEventListener('pointercancel', () => dragging = false);
 
@@ -374,24 +712,29 @@ function update(dt){
   t += dt;
   if (keys.ArrowLeft) pl.yaw -= 1.8*dt; if (keys.ArrowRight) pl.yaw += 1.8*dt;
   if (keys.ArrowUp) pl.pitch = Math.min(0.55, pl.pitch + dt*0.8); if (keys.ArrowDown) pl.pitch = Math.max(-0.45, pl.pitch - dt*0.8);
-  const run = keys.ShiftLeft || keys.ShiftRight;
+  dayCycle(dt);
+  const run = keys.ShiftLeft || keys.ShiftRight || runOn;
   const sp = (run ? 26 : 11) * dt;
   let mx = 0, my = 0; const fx = Math.cos(pl.yaw), fy = Math.sin(pl.yaw);
   if (keys.KeyW){ mx += fx; my += fy; } if (keys.KeyS){ mx -= fx; my -= fy; }
   if (keys.KeyA){ mx += fy; my -= fx; } if (keys.KeyD){ mx -= fy; my += fx; }
-  const len = Math.hypot(mx,my);
+  if (joy.on){ const jx = joy.x, jy = -joy.y; mx += fx*jy - fy*jx; my += fy*jy + fx*jx; }
+  let len = Math.hypot(mx,my);
+  const mag = joy.on && !(keys.KeyW||keys.KeyS||keys.KeyA||keys.KeyD) ? Math.min(1, Math.hypot(joy.x, joy.y)) : 1;
+  if (joy.on && len < 0.08) len = 0;
   const inWater = heightAt(pl.x,pl.y) < WATER - 0.6;
   if (len > 0){
-    const s = sp * (inWater ? 0.45 : 1) / len;
+    const s = sp * mag * (inWater ? (swimming() ? 0.35 : 0.45) : 1) / len;
     const nx = pl.x + mx*s, ny = pl.y + my*s;
     const gN = groundAt(nx,ny), mat = MAT[idx(nx|0,ny|0)];
-    const blocked = mat===6 || mat===7 || mat===8 || gN - pl.z > 3.2 || heightAt(nx,ny) < WATER - 3.5 || nx<2||ny<2||nx>N-3||ny>N-3;
+    const blocked = mat===6 || mat===7 || mat===8 || gN - pl.z > 3.2 || heightAt(nx,ny) < WATER - 26 || nx<2||ny<2||nx>N-3||ny>N-3;
     if (!blocked){ pl.x = nx; pl.y = ny; }
   }
   const g = groundAt(pl.x,pl.y);
   pl.vz -= 24*dt; pl.z += pl.vz*dt;
   if (pl.z <= g){ pl.z = lerp(pl.z, g, Math.min(1, dt*14)); if (pl.z < g - 1) pl.z = g - 1; pl.vz = 0; pl.onGround = true; }
   for (const b of birds){ b.a += b.s*dt; }
+  game(dt);
   if (stepTime(dt)){ relightT -= dt; if (relightT <= 0){ relight(...P.sun); relightT = 0.25; } }
 }
 
@@ -401,10 +744,12 @@ function loop(now){
   update(dt); render();
   frames++; fpsT += dt; if (fpsT > 0.5){ fps = Math.round(frames/fpsT); frames = 0; fpsT = 0;
     const where = heightAt(pl.x,pl.y) < WATER - 0.6 ? 'wading' : ({1:'beach',2:'meadow',3:'forest',4:'rocks',5:'forest',9:'dock'}[MAT[idx(pl.x|0,pl.y|0)]] || 'island');
-    statsEl.textContent = `${COLS}×${ROWS} characters · ${fps} fps · ${PRESETS[tod].name} · ${where}`; }
+    statsEl.textContent = `${COLS}×${ROWS} characters · ${fps} fps · ${PRESETS[tod].name}${rain>0.3?' · rain':''} · ${swimming()?'swimming':where}`; drawMap(); }
+  if (photoReq){ photoReq = false; takePhoto(); }
   requestAnimationFrame(loop);
 }
-const go = () => { initGL(); layout(); addEventListener('resize', layout); requestAnimationFrame(loop); };
+const go = () => { initGL(); layout(); addEventListener('resize', layout); buildMap(); updShells(); requestAnimationFrame(loop); };
+if (TOUCH) document.getElementById('startHow').innerHTML = 'Tap to start<br>left thumb: move · right thumb: look';
 (document.fonts && document.fonts.load ? document.fonts.load("500 12px 'JetBrains Mono'").then(()=>document.fonts.ready) : Promise.resolve()).then(go, go);
 })();
 </script>
