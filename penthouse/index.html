@@ -45,7 +45,7 @@
 <canvas id="c"></canvas>
 <div class="hud" id="title">PENTHOUSE · 88F<small>every pixel here is a text character</small></div>
 <div class="hud" id="help"><kbd>W A S D</kbd> walk &nbsp; <kbd>drag</kbd>/<kbd>← →</kbd> look &nbsp; <kbd>Shift</kbd> run &nbsp; <kbd>E</kbd> use &nbsp; <kbd>L</kbd> lights &nbsp; <kbd>R</kbd> rain &nbsp; <kbd>T</kbd> sky &nbsp; <kbd>P</kbd> photo</div>
-<div id="tools"><button class="tb" id="bLight" title="Lights (L)">◐</button><button class="tb" id="bRain" title="Rain (R)">/</button><button class="tb" id="bSky" title="Sky (T)">☾</button><button class="tb" id="bPhoto" title="Photo (P)">◉</button><a class="tb" href="../" title="Projects" style="width:40px;height:40px;display:grid;place-items:center;text-decoration:none">←</a></div>
+<div id="tools"><button class="tb" id="bLight" title="Lights (L)">◐</button><button class="tb" id="bRain" title="Rain (R)">/</button><button class="tb" id="bSky" title="Sky (T)">☾</button><button class="tb" id="bPhoto" title="Photo (P)">◉</button><button class="tb" id="bRes" title="Sharpness (H)" style="font-size:11px;font-weight:700">HD</button><a class="tb" href="../" title="Projects" style="width:40px;height:40px;display:grid;place-items:center;text-decoration:none">←</a></div>
 <div id="prompt"></div>
 <div id="toast"></div>
 <div id="touch"><div id="joy"><div id="knob"></div></div></div>
@@ -168,7 +168,7 @@ if (TOUCH) document.body.classList.add('touch');
 let GLYPHS = ""; for (let i = 32; i < 127; i++) GLYPHS += String.fromCharCode(i);
 GLYPHS += "·░▒";
 const GI = {}; [...GLYPHS].forEach((g, i) => GI[g] = i);
-let COLS, ROWS, CW, CH, CWp, CHp, W, Hpx, fg, bg, zc, cityMask, atlasT, fgT, bgT, uL = {};
+let sLastCol, sLastId, COLS, ROWS, CW, CH, CWp, CHp, W, Hpx, fg, bg, zc, cityMask, atlasT, fgT, bgT, uL = {};
 function initGL(){
   const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
   const p = gl.createProgram();
@@ -185,12 +185,15 @@ function initGL(){
   gl.uniform1i(uL.atlas, 0); gl.uniform1i(uL.fgT, 1); gl.uniform1i(uL.bgT, 2);
 }
 const AG = 16;
+const HS = new Set('-=_#~+'), VS = new Set('|#!:');
+const FISH = [['><>', '<><'], ['><(o>', '<o)><'], ['><((o>', '<o))><']];
+const RES = [{ n: 'SD', k: 1 }, { n: 'HD', k: .68 }, { n: '4K', k: .5 }]; let res = 1;
 function layout(){
   const dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; Hpx = innerHeight;
-  const fs = TOUCH ? (Math.min(W, Hpx) < 450 ? 9 : 10) : (W < 700 ? 10 : W > 1700 ? 14 : 12);
+  const fs = RES[res].k * (TOUCH ? (Math.min(W, Hpx) < 450 ? 9 : 10) : (W < 700 ? 10 : W > 1700 ? 14 : 12));
   const m = document.createElement('canvas').getContext('2d'); m.font = `500 ${fs}px 'JetBrains Mono', monospace`;
   CW = m.measureText('M').width; CH = Math.round(fs * 1.25);
-  COLS = Math.floor(W / CW); ROWS = Math.floor(Hpx / CH); CWp = Math.round(CW * dpr); CHp = Math.round(CH * dpr);
+  CWp = Math.round(CW * dpr); CHp = Math.round(CH * dpr); COLS = Math.floor(W * dpr / CWp); ROWS = Math.floor(Hpx * dpr / CHp); CW = CWp / dpr; CH = CHp / dpr;
   cv.width = COLS * CWp; cv.height = ROWS * CHp;
   cv.style.width = (COLS * CWp / dpr) + 'px'; cv.style.height = (ROWS * CHp / dpr) + 'px';
   cv.style.left = ((W - COLS * CWp / dpr) / 2) + 'px'; cv.style.top = ((Hpx - ROWS * CHp / dpr) / 2) + 'px';
@@ -201,7 +204,7 @@ function layout(){
   [...GLYPHS].forEach((g, i) => x.fillText(g, (i % AG) * CWp + CWp / 2, Math.floor(i / AG) * CHp + CHp / 2 + dpr));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlasT); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, ac);
   gl.uniform2f(uL.grid, COLS, ROWS); gl.uniform2f(uL.agrid, AG, ar);
-  fg = new Uint8Array(COLS * ROWS * 4); bg = new Uint8Array(COLS * ROWS * 4); zc = new Float32Array(COLS); cityMask = new Uint8Array(COLS * ROWS);
+  fg = new Uint8Array(COLS * ROWS * 4); bg = new Uint8Array(COLS * ROWS * 4); zc = new Float32Array(COLS); cityMask = new Uint8Array(COLS * ROWS); sLastCol = new Int32Array(ROWS).fill(-9); sLastId = new Int32Array(ROWS).fill(-1);
 }
 const cl = v => v < 0 ? 0 : v > 1 ? 1 : v, lerp = (a, b, t) => a + (b - a) * t;
 function put(i, ch, r, g, b, br, bgc, bb){
@@ -218,8 +221,8 @@ const MOODS = [
   { name: 'lights off',a: [.35, .3, .6], b: [.3, .3, .55],amb: .2 },
 ];
 let mood = 0, rain = false, music = false, tvCh = 0, t = 0;
-try { const sv = JSON.parse(localStorage.getItem('penthouse-88f')); if (sv) { mood = sv.mood | 0; rain = !!sv.rain; tvCh = sv.tvCh | 0; sky = sv.sky | 0; } } catch (e) {}
-const persist = () => { try { localStorage.setItem('penthouse-88f', JSON.stringify({ mood, rain, tvCh, sky })); } catch (e) {} };
+try { const sv = JSON.parse(localStorage.getItem('penthouse-88f')); if (sv) { mood = sv.mood | 0; rain = !!sv.rain; tvCh = sv.tvCh | 0; sky = sv.sky | 0; if (sv.res != null) res = sv.res | 0; } } catch (e) {}
+const persist = () => { try { localStorage.setItem('penthouse-88f', JSON.stringify({ mood, rain, tvCh, sky, res })); } catch (e) {} };
 
 // ---------- what the city looks like in a given direction / elevation ----------
 function city(i, ang, el, col, row){
@@ -232,9 +235,11 @@ function city(i, ang, el, col, row){
     if (el < top) {
       const B = Ly.info[Ly.bid[b2]], u = Ly.bx[b2];
       if (top < -1) break;                                          // a street far below
-      const fy = Math.floor((top - el) * (60 + L * 40)), fx = Math.floor(b2 * (1 + L * .5));
+      const fy = Math.floor((top - el) * (60 + L * 40) / RES[res].k), fx = Math.floor(b2 * (1 + L * .5));
       const k = (1 - Ly.haze) * S.lit;
-      if (B.sign && Math.abs(u - B.signAt * .7 - .15) < .05 && fy >= 2) {
+      const key = L * 100000 + Ly.bid[b2];
+      if (B.sign && Math.abs(u - B.signAt * .7 - .15) < .05 && fy >= 2 && !(sLastId[row] === key && sLastCol[row] === col - 1 && (sLastCol[row] = col))) {
+        sLastId[row] = key; sLastCol[row] = col;
         const ch = B.sign[(fy - 2) % (B.sign.length + 3)];
         if (ch && Math.sin(t * 2 + Ly.bid[b2]) > -.7) { put(i, ch, B.col[0] * k + .1, B.col[1] * k + .1, B.col[2] * k + .1, B.col[0] * .25 * k, B.col[1] * .25 * k, B.col[2] * .25 * k); cityMask[i] = 1; return; }
       }
@@ -249,7 +254,7 @@ function city(i, ang, el, col, row){
     }
   }
   if (el < -0.6) {     // looking down into the streets
-    const sx = Math.floor(a * 90), sy = Math.floor(-1 / el * 30);
+    const sx = Math.floor(a * 90 / RES[res].k), sy = Math.floor(-1 / el * 30 / RES[res].k);
     const lane = sx % 9 === 0 || sy % 7 === 0, h = hash(sx, sy);
     if (lane) put(i, h > .5 ? '-' : ':', 1, .45 + h * .4, .2, .15, .05, .04);
     else put(i, h > .93 ? '*' : '.', .5, .2, .55, .03, .02, .06);
@@ -260,7 +265,7 @@ function city(i, ang, el, col, row){
   let r = lerp(S.hor[0], S.top[0], k), g = lerp(S.hor[1], S.top[1], k), b = lerp(S.hor[2], S.top[2], k), ch = ' ', fr = r, fgc = g, fb = b;
   if (S.moon) { const da = Math.atan2(Math.sin(a - 4.2), Math.cos(a - 4.2)), dm = Math.hypot(da * 1.0, el - .42);
     if (dm < .07) { ch = dm < .045 ? '@' : 'O'; fr = fgc = fb = .95 * S.moon; } else if (dm < .2) { const gw = (1 - dm / .2) * .25 * S.moon; r += gw; g += gw; b += gw * 1.2; } }
-  if (ch === ' ' && el > .05 && sky !== 2) { const hs = hash(Math.floor(a * 160), Math.floor(el * 90)); if (hs > .992) { ch = hs > .998 ? '*' : '.'; fr = fgc = fb = .8; } }
+  if (ch === ' ' && el > .05 && sky !== 2) { const hs = hash(Math.floor(a * 160 / RES[res].k), Math.floor(el * 90 / RES[res].k)); if (hs > .992) { ch = hs > .998 ? '*' : '.'; fr = fgc = fb = .8; } }
   if (ch === ' ' && hash(Math.floor(a * 30 + t * .4), Math.floor(el * 20)) > .965 && el > 0) { ch = '~'; fr = r + .12; fgc = g + .1; fb = b + .15; }   // drifting haze
   put(i, ch, fr, fgc, fb, r, g, b); cityMask[i] = 1;
 }
@@ -295,7 +300,8 @@ function wallTex(i, c, u, v, d, mx, my){
     const lane = Math.floor(v * 7), fx = ((t * (.05 + hash(lane, 3) * .08) * (lane % 2 ? 1 : -1) + hash(lane, 9) + mx * .17) % 1 + 1) % 1;
     const du = (u - fx), cols = [[1, .6, .3], [1, .4, .8], [.5, 1, .9], [1, .9, .3]], fc = cols[lane % 4];
     let ch = ' ', r = .1, g = .45, b = .8;
-    if (Math.abs(du) < .07 && Math.abs((v * 7) % 1 - .5) < .18 && v > .12 && v < .9 && hash(lane, mx) > .3) { const dir = lane % 2 ? 1 : -1; const q = Math.floor((du / .07 + 1) * 1.5); ch = dir > 0 ? "><>"[Math.min(2, q)] : "<><"[Math.min(2, q)]; r = fc[0]; g = fc[1]; b = fc[2]; }
+    const fw = .07 * RES[res].k * FISH[res][0].length / 3;
+    if (Math.abs(du) < fw && Math.abs((v * 7) % 1 - .5) < .18 * RES[res].k && v > .12 && v < .9 && hash(lane, mx) > .3) { const dir = lane % 2 ? 1 : -1, F = FISH[res][dir > 0 ? 0 : 1]; const q = Math.floor((du / fw + 1) / 2 * F.length); ch = F[Math.min(F.length - 1, q)]; r = fc[0]; g = fc[1]; b = fc[2]; }
     else if (hash(Math.floor(u * 40 + mx * 40), Math.floor(v * 70 - t * 6)) > .985) { ch = 'o'; r = .7; g = .9; b = 1; }
     else if (v < .1) { ch = hash(Math.floor(u * 20), mx) > .5 ? '^' : '.'; r = .9; g = .8; b = .5; }
     else if (v > .94) { ch = '='; r = .4; g = .5; b = .6; }
@@ -413,14 +419,16 @@ function render(){
     const wpx = s.w / d * f, hpx = s.h / d * f;
     const bot = horizon + (EYE - (s.z || 0)) * f / d, top = bot - hpx;
     const c0 = Math.floor((scr - wpx / 2) / CW), c1 = Math.ceil((scr + wpx / 2) / CW), r0 = Math.floor(top / CH), r1 = Math.ceil(bot / CH);
-    const Md = MOODS[mood], am = s.glow ? 1 : Math.max(.35, Md.amb) / (1 + d * .1);
+    const Md = MOODS[mood], am = s.glow ? 1 : Math.max(.35, Md.amb) / (1 + d * .1), pcx = wpx / s.aw / CW, pcy = hpx / s.rows.length / CH;
     for (let cc = Math.max(0, c0); cc < Math.min(COLS, c1); cc++) {
       if (d > zc[cc]) continue;
       const u = ((cc + .5) * CW - (scr - wpx / 2)) / wpx;
       for (let rr = Math.max(0, r0); rr < Math.min(ROWS, r1); rr++) {
         const v = ((rr + .5) * CH - top) / hpx; if (v < 0 || v >= 1 || u < 0 || u >= 1) continue;
-        const line = s.rows[Math.floor(v * s.rows.length)], ch = line[Math.floor(u * s.aw)] || ' ';
+        const ay = Math.floor(v * s.rows.length), ax = Math.floor(u * s.aw), line = s.rows[ay], ch = line[ax] || ' ';
         if (ch === ' ') continue;
+        const off = (pcx > 1.15 && !HS.has(ch) && Math.floor(((ax + .5) / s.aw * wpx + scr - wpx / 2) / CW) !== cc) || (pcy > 1.15 && !VS.has(ch) && Math.floor(((ay + .5) / s.rows.length * hpx + top) / CH) !== rr);
+        if (off) { const o = (rr * COLS + cc) * 4, k = .22 * am; put(rr * COLS + cc, ' ', 0, 0, 0, bg[o] / 255 * .5 + s.c[0] * k, bg[o + 1] / 255 * .5 + s.c[1] * k, bg[o + 2] / 255 * .5 + s.c[2] * k); continue; }
         const i = rr * COLS + cc, o = i * 4;
         let [r, g, b] = s.c;
         if (s.art === 'desk' && ch === ':') { const k = hash(cc, Math.floor(t * 6 + rr)); r = .2; g = .9 + k * .1; b = 1; }
@@ -513,6 +521,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyE' || e.code === 'Enter') use();
   if (e.code === 'KeyL') { mood = (mood + 1) % MOODS.length; toast('lights: ' + MOODS[mood].name, 1000); persist(); }
   if (e.code === 'KeyR') { rain = !rain; toast(rain ? 'rain' : 'clear', 900); persist(); }
+  if (e.code === 'KeyH') setRes();
   if (e.code === 'KeyT') { sky = (sky + 1) % SKIES.length; toast('sky: ' + SKIES[sky].name, 1000); persist(); }
   if (e.code === 'KeyP') photoReq = true;
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -540,6 +549,8 @@ document.getElementById('bUse').addEventListener('pointerdown', e => { e.stopPro
 document.getElementById('bRun').addEventListener('pointerdown', e => { e.stopPropagation(); runOn = !runOn; e.currentTarget.classList.toggle('on', runOn); });
 document.getElementById('bLight').onclick = () => { mood = (mood + 1) % MOODS.length; toast('lights: ' + MOODS[mood].name, 1000); persist(); };
 document.getElementById('bRain').onclick = () => { rain = !rain; toast(rain ? 'rain' : 'clear', 900); persist(); };
+function setRes(){ res = (res + 1) % RES.length; layout(); document.getElementById('bRes').textContent = RES[res].n; toast('sharpness: ' + RES[res].n, 1000); persist(); }
+document.getElementById('bRes').onclick = setRes;
 document.getElementById('bSky').onclick = () => { sky = (sky + 1) % SKIES.length; toast('sky: ' + SKIES[sky].name, 1000); persist(); };
 document.getElementById('bPhoto').onclick = () => photoReq = true;
 let started = false;
@@ -586,7 +597,7 @@ function loop(now){
   if (photoReq) { photoReq = false; photo(); }
   requestAnimationFrame(loop);
 }
-const go = () => { initGL(); layout(); addEventListener('resize', layout); requestAnimationFrame(loop); };
+const go = () => { initGL(); layout(); document.getElementById('bRes').textContent = RES[res].n; addEventListener('resize', layout); requestAnimationFrame(loop); };
 (document.fonts && document.fonts.load ? document.fonts.load("500 12px 'JetBrains Mono'").then(() => document.fonts.ready) : Promise.resolve()).then(go, go);
 if (location.hash === '#debug') window.__ph = { pl, set sky(v){ sky = v; }, set mood(v){ mood = v; }, set rain(v){ rain = v; }, set tv(v){ tvCh = v; }, use, nearby };
 })();
