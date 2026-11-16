@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ASCII Runner">
+<meta name="theme-color" content="#000000">
+<title>ASCII Runner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--g:#C6FF00;--dim:#7d8873;--line:#20261a}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+html,body{height:100%;background:#000;color:#eef4e6;font-family:'JetBrains Mono',ui-monospace,monospace;overflow:hidden;touch-action:none;overscroll-behavior:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hud{position:fixed;top:calc(8px + env(safe-area-inset-top));left:12px;right:12px;display:flex;justify-content:space-between;align-items:center;z-index:3;pointer-events:none;font-weight:700}
+.hud .s{font-size:22px;color:var(--g);text-shadow:0 0 10px rgba(198,255,0,.5)}
+.hud .b{font-size:12px;color:var(--dim)}
+#pause{pointer-events:auto;font:700 12px 'JetBrains Mono';color:#eef4e6;background:rgba(15,18,13,.8);border:1px solid var(--line);border-radius:999px;padding:7px 11px}
+.screen{position:fixed;inset:0;z-index:5;display:none;place-items:center;text-align:center;padding:24px;background:rgba(0,0,0,.82)}
+.screen.on{display:grid}
+h1{font-family:'Bebas Neue';font-weight:400;font-size:66px;line-height:.88}
+h1 b{color:var(--g);font-weight:400}
+.screen p{color:var(--dim);font-size:13px;line-height:1.6;margin:14px auto 20px;max-width:300px}
+.big{font:700 15px 'JetBrains Mono';color:#000;background:var(--g);border:0;border-radius:999px;padding:14px 26px;margin:5px}
+.small{font:700 12px 'JetBrains Mono';color:#eef4e6;background:transparent;border:1px solid var(--line);border-radius:999px;padding:10px 16px;margin:5px}
+.score{font-family:'Bebas Neue';font-size:88px;color:var(--g);line-height:1;text-shadow:0 0 30px rgba(198,255,0,.35)}
+.best{color:var(--dim);font-size:13px;margin-top:6px}
+.new{color:#ffd23f;font-weight:700}
+a.back{display:inline-block;margin-top:14px;color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud"><div><div class="s" id="sc">0</div><div class="b" id="hb">BEST 0</div></div><button id="pause">II</button></div>
+
+<div class="screen on" id="title"><div>
+  <h1>ASCII<br><b>RUNNER</b></h1>
+  <p>Fly the canyon. Grab <span style="color:#ffd23f">$</span>, dodge <span style="color:#fff">O</span>, and <span style="color:#4fd8ff">S</span> gives you a shield. It gets faster.</p>
+  <button class="big" id="playTilt">TILT TO STEER</button><br>
+  <button class="small" id="playTouch">drag to steer instead</button>
+  <div class="best" id="tb"></div>
+  <a class="back" href="../">← projects</a>
+</div></div>
+
+<div class="screen" id="over"><div>
+  <div class="b" style="color:var(--dim);font-size:12px;letter-spacing:.2em">CRASHED</div>
+  <div class="score" id="fs">0</div>
+  <div class="best" id="fb"></div>
+  <p id="tip"></p>
+  <button class="big" id="again">AGAIN</button><br>
+  <button class="small" id="menu">menu</button>
+</div></div>
+
+<div class="screen" id="paused"><div>
+  <h1>PAUSED</h1><p>Tap to keep going.</p><button class="big" id="resume">RESUME</button>
+</div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $("c"), cx = cv.getContext("2d");
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+const BEST_KEY = "ascii-runner-best";
+let best = 0; try { best = +localStorage.getItem(BEST_KEY) || 0; } catch(e) {}
+
+// ---------- grid ----------
+let COLS = 26, ROWS = 40, CW = 14, CH = 24, W = 0, H = 0;
+function fit(){
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR; cx.setTransform(DPR,0,0,DPR,0,0);
+  COLS = Math.max(20, Math.min(34, Math.round(W / 15)));
+  CW = W / COLS; CH = CW * 1.55; ROWS = Math.ceil(H / CH) + 2;
+}
+addEventListener("resize", fit); fit();
+
+// ---------- world ----------
+// rows[0] is the top of the screen. Each row: {l, r, cells:{x:char}}
+let rows = [], player, state = "title", mode = "tilt", speed, dist, coins, shield, t0, shake, center, width, drift, lastT, scroll, parts, flash;
+const PY = () => ROWS - Math.round(ROWS * 0.22);   // player row
+function newRow(){
+  // the canyon swings side to side (bigger swings the further you go) and narrows
+  const minW = Math.max(6, 12 - dist / 500), target = minW + Math.sin(dist / 90) * 1.5 + 1.5;
+  width += (target - width) * 0.06;
+  const half = width / 2, room = Math.max(0, COLS / 2 - half - 1.5);
+  const amp = Math.min(1, 0.35 + dist / 1500);
+  drift += (Math.random() - 0.5) * 0.25; drift *= 0.92;
+  center = COLS / 2 + room * amp * (0.75 * Math.sin(dist / 37) + 0.25 * Math.sin(dist / 13.7)) + drift;
+  center = Math.max(half + 1, Math.min(COLS - half - 2, center));
+  const l = Math.round(center - half), r = Math.round(center + half);
+  const cells = {};
+  const level = Math.min(1, dist / 4000);
+  if (dist > 25) {
+    if (Math.random() < 0.13 + level * 0.2) cells[l + 1 + Math.floor(Math.random() * Math.max(1, r - l - 1))] = "O";
+    if (Math.random() < 0.035 + level * 0.05) cells[l + 1 + Math.floor(Math.random() * Math.max(1, r - l - 1))] = "O";
+    if (Math.random() < 0.09) { const x = l + 1 + Math.floor(Math.random() * Math.max(1, r - l - 1)); if (!cells[x]) cells[x] = "$"; }
+    if (Math.random() < 0.006) { const x = l + 1 + Math.floor(Math.random() * Math.max(1, r - l - 1)); if (!cells[x]) cells[x] = "S"; }
+  }
+  return { l, r, cells, tex: Math.random() };
+}
+function reset(){
+  speed = 9; dist = 0; coins = 0; shield = 0; shake = 0; scroll = 0; parts = []; flash = 0;
+  center = COLS / 2; width = 12; drift = 0;
+  rows = []; for (let i = 0; i < ROWS; i++) rows.push(newRow());
+  player = { x: COLS / 2, vx: 0 };
+}
+
+// ---------- input ----------
+let tilt = 0, touchX = null, tiltZero = null;
+function onOrient(e){
+  if (e.gamma == null) return;
+  // portrait: gamma = left/right tilt. Calibrate to how the phone is held when the run starts.
+  const g = e.gamma;
+  if (tiltZero === null) tiltZero = g;
+  tilt = Math.max(-1, Math.min(1, (g - tiltZero) / 22));
+}
+async function askTilt(){
+  try {
+    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== "granted") return false;
+    }
+    addEventListener("deviceorientation", onOrient);
+    return true;
+  } catch (e) { return false; }
+}
+cv.addEventListener("pointerdown", e => { touchX = e.clientX; });
+cv.addEventListener("pointermove", e => { if (touchX !== null) touchX = e.clientX; });
+addEventListener("pointerup", () => { touchX = null; });
+addEventListener("keydown", e => { if (e.key === "ArrowLeft") keys.l = 1; if (e.key === "ArrowRight") keys.r = 1; if (e.key === " " && state === "over") start(mode); });
+addEventListener("keyup", e => { if (e.key === "ArrowLeft") keys.l = 0; if (e.key === "ArrowRight") keys.r = 0; });
+const keys = { l: 0, r: 0 };
+
+// ---------- sound (tiny synth, no files) ----------
+let ac = null;
+function beep(f, d = 0.07, type = "square", v = 0.05){
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.value = f; g.gain.value = v;
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d);
+    o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + d);
+  } catch (e) {}
+}
+
+// ---------- game flow ----------
+function show(id){ for (const s of ["title","over","paused"]) $(s).classList.toggle("on", s === id); }
+async function start(m){
+  mode = m;
+  if (m === "tilt" && !(await askTilt())) mode = "touch";
+  tiltZero = null; tilt = 0;
+  reset(); state = "play"; show(null); lastT = performance.now(); beep(440, .08); beep(660, .1);
+}
+function crash(){
+  state = "over"; shake = 14; flash = 1; beep(120, .35, "sawtooth", .08);
+  const score = Math.floor(dist) + coins * 25;
+  const isBest = score > best;
+  if (isBest) { best = score; try { localStorage.setItem(BEST_KEY, best); } catch(e) {} }
+  $("fs").textContent = score;
+  $("fb").innerHTML = isBest ? '<span class="new">NEW BEST!</span>' : "best " + best;
+  const tips = ["Small tilts beat big ones.", "Coins are worth 25 each.", "S = one free crash.", "The canyon narrows after 1,000.", "Hold the phone how you like: it calibrates when you start."];
+  $("tip").textContent = tips[Math.floor(Math.random() * tips.length)];
+  setTimeout(() => show("over"), 650);
+}
+$("playTilt").onclick = () => start("tilt");
+$("playTouch").onclick = () => start("touch");
+$("again").onclick = () => start(mode);
+$("menu").onclick = () => { state = "title"; show("title"); };
+$("pause").onclick = () => { if (state === "play") { state = "paused"; show("paused"); } };
+$("resume").onclick = () => { state = "play"; show(null); lastT = performance.now(); };
+document.addEventListener("visibilitychange", () => { if (document.hidden && state === "play") { state = "paused"; show("paused"); } });
+
+// ---------- update ----------
+function update(dt){
+  speed = 9 + Math.min(18, dist / 120);                 // rows per second
+  // steering
+  let target = 0;
+  if (mode === "tilt") target = tilt;
+  if (touchX !== null) target = Math.max(-1, Math.min(1, (touchX - (player.x + .5) * CW) / (CW * 2.5)));
+  if (keys.l) target = -1; if (keys.r) target = 1;
+  player.vx += (target * 22 - player.vx) * Math.min(1, dt * 10);
+  player.x += player.vx * dt;
+  // scroll the world
+  scroll += speed * dt;
+  while (scroll >= 1) {
+    scroll -= 1; dist += 1;
+    rows.pop(); rows.unshift(newRow());
+    if (dist % 100 === 0) beep(880, .05, "triangle", .03);
+  }
+  // collisions on the player's row
+  const row = rows[PY()], px = Math.round(player.x);
+  player.x = Math.max(0, Math.min(COLS - 1, player.x));
+  if (px <= row.l || px >= row.r) return hit(row, px, true);
+  const c = row.cells[px];
+  if (c === "$") { delete row.cells[px]; coins++; burst(px, PY(), "#ffd23f", "$"); beep(1320, .06, "square", .04); }
+  else if (c === "S") { delete row.cells[px]; shield = 1; burst(px, PY(), "#4fd8ff", "*"); beep(520, .2, "triangle", .06); }
+  else if (c === "O") hit(row, px, false);
+  // particles
+  for (const p of parts) { p.y += p.vy * dt; p.x += p.vx * dt; p.life -= dt; }
+  parts = parts.filter(p => p.life > 0);
+  shake *= 0.85; flash *= 0.9;
+}
+function hit(row, px, wall){
+  if (shield) {
+    shield = 0; shake = 8; burst(px, PY(), "#4fd8ff", "*"); beep(300, .15, "sawtooth", .06);
+    if (!wall) delete row.cells[px]; else player.x = (row.l + row.r) / 2;
+    return;
+  }
+  burst(px, PY(), "#ff5a5a", "#"); crash();
+}
+function burst(x, y, color, ch){
+  for (let i = 0; i < 10; i++) parts.push({ x, y, vx: (Math.random() - .5) * 14, vy: (Math.random() - .5) * 14, life: .5 + Math.random() * .4, color, ch });
+}
+
+// ---------- draw ----------
+const WALL = "#%&8@";
+function draw(t){
+  cx.save();
+  cx.fillStyle = "#000"; cx.fillRect(0, 0, W, H);
+  if (shake > .3) cx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
+  cx.font = `700 ${CH * 0.82}px "JetBrains Mono", ui-monospace, monospace`;
+  cx.textBaseline = "top"; cx.textAlign = "center";
+  const off = scroll * CH - CH;
+  for (let y = 0; y < rows.length; y++) {
+    const r = rows[y], sy = y * CH + off;
+    const near = y / ROWS;                                 // fade in from the top
+    for (let x = 0; x < COLS; x++) {
+      let ch = null, col = null;
+      if (x < r.l || x > r.r) {
+        // canyon walls: textured, brighter at the edge
+        const edge = x === r.l - 1 || x === r.r + 1;
+        ch = edge ? WALL[(x + y + Math.floor(dist)) % WALL.length] : ((x * 7 + y * 3 + Math.floor(r.tex * 9)) % 5 === 0 ? ":" : ".");
+        col = edge ? `rgba(198,255,0,${.35 + near * .6})` : `rgba(198,255,0,${.08 + near * .15})`;
+      } else if (x === r.l || x === r.r) { ch = "|"; col = `rgba(198,255,0,${.5 + near * .5})`; }
+      else if (r.cells[x]) {
+        ch = r.cells[x];
+        col = ch === "$" ? "#ffd23f" : ch === "S" ? "#4fd8ff" : "#ffffff";
+      } else if ((x + y * 3 + Math.floor(dist)) % 23 === 0) { ch = "·"; col = "rgba(255,255,255,.12)"; }
+      if (ch) { cx.fillStyle = col; cx.fillText(ch, (x + .5) * CW, sy); }
+    }
+  }
+  // player ship + trail
+  if (state === "play" || state === "paused") {
+    const py = PY() * CH + off + CH, sx = (player.x + .5) * CW;
+    for (let i = 1; i <= 4; i++) { cx.fillStyle = `rgba(198,255,0,${.5 - i * .1})`; cx.fillText(i % 2 ? "'" : ".", sx - player.vx * .02 * i, py + i * CH * .55); }
+    if (shield) { cx.fillStyle = "rgba(79,216,255,.9)"; cx.fillText("( )", sx, py - CH * .02); }
+    cx.fillStyle = "#ffffff"; cx.shadowColor = "#C6FF00"; cx.shadowBlur = 14;
+    cx.fillText(player.vx < -6 ? "<A" : player.vx > 6 ? "A>" : "A", sx, py - CH * .02);
+    cx.shadowBlur = 0;
+  }
+  for (const p of parts) { cx.fillStyle = p.color; cx.globalAlpha = Math.max(0, p.life * 1.6); cx.fillText(p.ch, (p.x + .5) * CW, p.y * CH + off + CH); }
+  cx.globalAlpha = 1;
+  if (flash > .02) { cx.fillStyle = `rgba(255,60,60,${flash * .35})`; cx.fillRect(0, 0, W, H); }
+  cx.restore();
+  const score = Math.floor(dist) + coins * 25;
+  $("sc").textContent = state === "title" ? "" : score;
+  $("hb").textContent = "BEST " + Math.max(best, state === "play" ? score : 0) + (shield ? "  ·  SHIELD" : "") ;
+}
+
+function loop(t){
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (t - (lastT || t)) / 1000); lastT = t;
+  if (state === "play") update(dt);
+  else if (state === "title") { scroll += 4 * dt; while (scroll >= 1) { scroll -= 1; dist += 1; rows.pop(); rows.unshift(newRow()); } player.x = center; }
+  else if (state === "over") { for (const p of parts) { p.y += p.vy * dt; p.x += p.vx * dt; p.life -= dt; } parts = parts.filter(p => p.life > 0); shake *= .85; flash *= .9; }
+  draw(t);
+}
+$("tb").textContent = best ? "best " + best : "";
+reset(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
